@@ -1,0 +1,12 @@
+# Build output
+/aircraft-tracker
+/dist/
+
+# Map tiles: ~1 GB, built with `make tiles`
+/tiles/
+
+# Recorded position history
+/history/
+
+# Contains the PBKDF2 password hash
+/config.json

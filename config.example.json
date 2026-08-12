@@ -1,0 +1,9 @@
+{
+  "listen": ":8080",
+  "poll_interval": "2s",
+  "broadcast_interval": "1s",
+  "fleet": [
+    { "rego": "VH-YSO", "type": "B190", "desc": "Beech 1900C-1" },
+    { "rego": "VH-TAV", "type": "P68", "desc": "Vulcanair P.68C" }
+  ]
+}
