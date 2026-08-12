@@ -39,6 +39,11 @@ const (
 	// with no SLA; when one is unwell we keep a slow heartbeat going rather
 	// than hammering it or giving up on it entirely.
 	maxBackoff = 2 * time.Minute
+	// blockedBackoff applies to an outright access refusal (403/401) rather
+	// than a rate limit. A block is cleared by a human, not by waiting, so we
+	// check back rarely -- often enough to notice restored access, rarely
+	// enough not to be part of the problem.
+	blockedBackoff = 15 * time.Minute
 )
 
 // State is one fleet member as the UI should render it.
@@ -53,8 +58,9 @@ type State struct {
 // of this state is only ever touched by that goroutine, so it needs no lock.
 type source struct {
 	Provider
-	interval time.Duration // configured floor
-	fails    int           // consecutive failures, for logging and backoff
+	interval      time.Duration // configured floor, used when the fleet is active
+	fails         int           // consecutive failures, for logging and backoff
+	warnedBlocked bool          // so an access block is reported once, not every retry
 	// cooldown is an adaptive penalty added to interval. It persists across
 	// recovery and decays only after sustained success.
 	//
@@ -74,8 +80,19 @@ type source struct {
 // limit has lifted -- that is exactly what the oscillation looked like.
 const cooldownDecayAfter = 3
 
-// wait is the normal interval between polls, including any adaptive penalty.
-func (s *source) wait() time.Duration { return s.interval + s.cooldown }
+// pollMode is why we are polling at the rate we are, for logging.
+type pollMode string
+
+const (
+	modeActive    pollMode = "active"
+	modeIdle      pollMode = "idle"
+	modeIdleQuiet pollMode = "idle, quiet hours"
+)
+
+// base is this source's own schedule: its configured interval plus any adaptive
+// penalty, ignoring fleet activity and time of day. Poller.waitFor layers those
+// on top.
+func (s *source) base() time.Duration { return s.interval + s.cooldown }
 
 // noteSuccess eases the penalty and reports how many failures preceded this
 // success, so the caller can log a recovery.
@@ -96,11 +113,18 @@ func (s *source) noteSuccess() int {
 }
 
 type Poller struct {
-	client    *http.Client
-	members   []Member
-	hexes     string // precomputed comma-separated list
-	sources   []*source
-	broadcast time.Duration
+	client       *http.Client
+	members      []Member
+	hexes        string // precomputed comma-separated list
+	sources      []*source
+	broadcast    time.Duration
+	idleInterval time.Duration
+	idleTimeout  time.Duration
+	quiet        QuietHours
+
+	// mode is the last announced polling mode, owned by the broadcast
+	// goroutine so transitions are logged once rather than once per provider.
+	mode pollMode
 
 	mu     sync.RWMutex
 	latest map[string]Fix
@@ -130,10 +154,75 @@ func NewPoller(c *Config) *Poller {
 		// geographically constrained -- verified with a single request that
 		// returned aircraft near Sydney and Melbourne together. This is why
 		// there is no viewport tracking or circle stitching anywhere here.
-		hexes:     strings.Join(hx, ","),
-		sources:   srcs,
-		broadcast: c.BroadcastInterval.Duration,
-		latest:    make(map[string]Fix, len(c.Fleet)),
+		hexes:        strings.Join(hx, ","),
+		sources:      srcs,
+		broadcast:    c.BroadcastInterval.Duration,
+		idleInterval: c.IdleInterval.Duration,
+		idleTimeout:  c.IdleTimeout.Duration,
+		quiet:        c.QuietHours,
+		latest:       make(map[string]Fix, len(c.Fleet)),
+	}
+}
+
+// active reports whether any fleet member has been detected within idleTimeout.
+//
+// Being on the ground counts. An aircraft sitting with its transponder powered
+// is a strong signal of an imminent departure, which is exactly when the fast
+// rate earns its keep -- and the cost of being wrong is polling a free API well
+// inside its documented limit.
+func (p *Poller) active(now time.Time) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, f := range p.latest {
+		if now.Sub(f.At) <= p.idleTimeout {
+			return true
+		}
+	}
+	return false
+}
+
+// modeAt reports the polling mode and its base interval.
+//
+// Time of day only matters while idle: an aircraft detected at 3am is tracked
+// at the full rate like any other, because the reason to watch it is the same.
+func (p *Poller) modeAt(now time.Time) (pollMode, time.Duration) {
+	if p.active(now) {
+		return modeActive, 0 // 0 means "the source's own interval"
+	}
+	if p.quiet.active(now) {
+		return modeIdleQuiet, p.quiet.IdleInterval.Duration
+	}
+	return modeIdle, p.idleInterval
+}
+
+// waitFor is the interval before a source's next poll, including any adaptive
+// penalty. Idle rates may only ever slow a source down, never speed it up.
+func (p *Poller) waitFor(s *source, now time.Time) time.Duration {
+	_, idle := p.modeAt(now)
+	return max(s.interval, idle) + s.cooldown
+}
+
+// announceMode logs mode changes. Called only from the broadcast goroutine, so
+// it needs no lock of its own and a transition is reported once rather than
+// once per provider.
+//
+// Worth logging because several minutes of silence between polls is otherwise
+// indistinguishable from a wedged poller at three in the morning.
+func (p *Poller) announceMode(now time.Time) {
+	mode, idle := p.modeAt(now)
+	if mode == p.mode {
+		return
+	}
+	first := p.mode == ""
+	p.mode = mode
+	switch {
+	case first:
+		log.Printf("poll: starting %s", mode)
+	case mode == modeActive:
+		log.Printf("poll: aircraft detected, resuming full rate")
+	default:
+		log.Printf("poll: nothing seen for %s, dropping to %s (every %s)",
+			p.idleTimeout, mode, idle)
 	}
 }
 
@@ -142,8 +231,8 @@ func NewPoller(c *Config) *Poller {
 // The two are deliberately decoupled. Upstream rate limits differ per provider
 // and can force a slow poll; clients should still receive a steady, predictable
 // stream. Separating them also means staggered providers compose: two sources
-// at 2s offset by 1s refresh fleet state about once a second, while neither
-// sees more than one request every two seconds.
+// at 5s offset by 2.5s refresh fleet state every 2.5s, while neither sees more
+// than one request every five seconds.
 func (p *Poller) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	for i, s := range p.sources {
@@ -170,7 +259,7 @@ func (p *Poller) runSource(ctx context.Context, s *source, offset time.Duration)
 		return
 	}
 	for {
-		wait := s.wait()
+		wait := p.waitFor(s, time.Now())
 
 		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 		fixes, err := s.poll(reqCtx, p.client, p.hexes)
@@ -178,20 +267,33 @@ func (p *Poller) runSource(ctx context.Context, s *source, offset time.Duration)
 
 		switch {
 		case err == nil:
-			if failed := s.noteSuccess(); failed > 0 {
+			failed := s.noteSuccess()
+			p.merge(fixes) // merge before recomputing: these fixes may end the idle period
+			wait = p.waitFor(s, time.Now())
+			if failed > 0 {
 				log.Printf("poll: %s recovered after %d failures (now every %s)",
-					s.Name, failed, s.wait().Round(time.Second))
+					s.Name, failed, wait.Round(time.Second))
 			}
-			wait = s.wait()
-			p.merge(fixes)
 		case ctx.Err() != nil:
 			return // shutting down; the error is just the cancelled request
 		default:
-			s.fails++
-			wait = s.retryDelay(err)
+			// Whichever is longer: the backoff, or the rate we would be polling
+			// at anyway. A failing provider must not end up polled *faster*
+			// than a healthy one just because the fleet went idle.
+			wait = max(s.retryDelay(err), p.waitFor(s, time.Now()))
 			// One provider failing is expected and survivable -- the point of
 			// polling two is that either can carry the fleet alone.
 			log.Printf("poll: %v (retry in %s)", err, wait.Round(time.Second))
+			// A block is a different thing from a rate limit and needs a human,
+			// so say so plainly -- once, not on every retry.
+			var he *httpError
+			if errors.As(err, &he) && he.Blocked() && !s.warnedBlocked {
+				s.warnedBlocked = true
+				log.Printf("poll: %s is REFUSING ACCESS, not rate limiting. "+
+					"This is usually an IP block and will not clear by waiting. "+
+					"Retrying every %s; resolve it with the provider.",
+					s.Name, wait.Round(time.Minute))
+			}
 		}
 
 		if !sleepCtx(ctx, wait) {
@@ -210,11 +312,20 @@ func (p *Poller) runSource(ctx context.Context, s *source, offset time.Duration)
 func (s *source) retryDelay(err error) time.Duration {
 	s.fails++
 	s.successes = 0
-	s.cooldown = min(max(2*s.cooldown, s.interval), maxBackoff)
 
-	d := s.wait()
 	var he *httpError
-	if errors.As(err, &he) && he.RetryAfter > d {
+	isHTTP := errors.As(err, &he)
+
+	// An access block will not clear on a two-minute timer, and hammering a
+	// provider that has just refused us is the surest way to stay refused.
+	if isHTTP && he.Blocked() {
+		s.cooldown = blockedBackoff
+		return blockedBackoff
+	}
+
+	s.cooldown = min(max(2*s.cooldown, s.interval), maxBackoff)
+	d := s.base()
+	if isHTTP && he.RetryAfter > d {
 		d = he.RetryAfter
 	}
 	return min(d, maxBackoff)
@@ -228,6 +339,7 @@ func (p *Poller) runBroadcast(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			p.announceMode(time.Now())
 			// Ticker drops ticks rather than queueing them, so a slow consumer
 			// costs an update but never builds a backlog.
 			if p.OnUpdate != nil {

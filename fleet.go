@@ -33,6 +33,52 @@ func (d *duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// clockTime is a time of day in UTC, minutes since midnight. Written "15:04"
+// in config. UTC deliberately: the alternative is a local window that shifts by
+// an hour twice a year when Australian daylight saving starts and stops, which
+// is a silent behaviour change nobody would connect to the clocks going back.
+type clockTime int
+
+func (c *clockTime) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return fmt.Errorf("time %q: want HH:MM in UTC", s)
+	}
+	*c = clockTime(t.Hour()*60 + t.Minute())
+	return nil
+}
+
+func (c clockTime) String() string { return fmt.Sprintf("%02d:%02dZ", int(c)/60, int(c)%60) }
+
+// QuietHours is a UTC window with its own idle rate. It applies only while the
+// fleet is idle -- an aircraft detected at 3am is tracked at the full rate like
+// any other, because the reason to watch it is the same.
+type QuietHours struct {
+	From clockTime `json:"from"`
+	To   clockTime `json:"to"`
+	// IdleInterval replaces Config.IdleInterval inside the window.
+	IdleInterval duration `json:"idle_interval"`
+}
+
+// active reports whether t falls in [From, To). Windows that wrap midnight
+// (e.g. 20:00-06:00) are handled, since that is the natural way to express a
+// night for most of the world -- ours happens not to wrap.
+func (q QuietHours) active(t time.Time) bool {
+	if q.IdleInterval.Duration <= 0 || q.From == q.To {
+		return false // disabled
+	}
+	u := t.UTC()
+	m := clockTime(u.Hour()*60 + u.Minute())
+	if q.From < q.To {
+		return m >= q.From && m < q.To
+	}
+	return m >= q.From || m < q.To
+}
+
 type Config struct {
 	Listen string `json:"listen"`
 	// PollInterval is the default upstream poll rate, used for any provider
@@ -42,9 +88,18 @@ type Config struct {
 	// deliberately independent of PollInterval: upstream rate limits differ per
 	// provider and can force a slow poll, but clients should still get a
 	// steady, predictable stream.
-	BroadcastInterval duration   `json:"broadcast_interval"`
-	Providers         []Provider `json:"providers"`
-	Fleet             []Member   `json:"fleet"`
+	BroadcastInterval duration `json:"broadcast_interval"`
+	// IdleInterval is the poll rate while no fleet member has been seen for
+	// IdleTimeout. Most of the day nothing is flying, and there is no reason to
+	// spend a free service's capacity confirming that ten times a minute.
+	IdleInterval duration `json:"idle_interval"`
+	// IdleTimeout is how long after the last detection we drop to IdleInterval.
+	IdleTimeout duration `json:"idle_timeout"`
+	// QuietHours overrides IdleInterval overnight. Set its idle_interval to
+	// "0s" to disable the window.
+	QuietHours QuietHours `json:"quiet_hours"`
+	Providers  []Provider `json:"providers"`
+	Fleet      []Member   `json:"fleet"`
 }
 
 // vhToHex derives an ICAO 24-bit address from an Australian VH- registration.
@@ -104,6 +159,28 @@ func (c *Config) normalise() error {
 	}
 	if c.BroadcastInterval.Duration <= 0 {
 		c.BroadcastInterval.Duration = time.Second
+	}
+	if c.IdleInterval.Duration <= 0 {
+		c.IdleInterval.Duration = defaultIdleInterval
+	}
+	if c.IdleTimeout.Duration <= 0 {
+		c.IdleTimeout.Duration = defaultIdleTimeout
+	}
+	// A zero QuietHours means "unset", so apply the defaults. Disabling it is
+	// spelled explicitly with an idle_interval of "0s", or an equal from/to.
+	if c.QuietHours == (QuietHours{}) {
+		c.QuietHours = defaultQuietHours()
+	}
+	// Idle rates may only ever be slower than the active rate. Otherwise
+	// "idle" becomes a way to poll harder while nothing is happening, which is
+	// precisely backwards.
+	if c.IdleInterval.Duration < c.PollInterval.Duration {
+		return fmt.Errorf("idle_interval %s is faster than poll_interval %s; idling may only slow polling",
+			c.IdleInterval.Duration, c.PollInterval.Duration)
+	}
+	if q := c.QuietHours.IdleInterval.Duration; q > 0 && q < c.IdleInterval.Duration {
+		return fmt.Errorf("quiet_hours idle_interval %s is faster than idle_interval %s; quiet hours may only slow polling",
+			q, c.IdleInterval.Duration)
 	}
 	if len(c.Providers) == 0 {
 		c.Providers = DefaultProviders()

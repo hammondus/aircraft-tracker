@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,7 +65,7 @@ func TestCooldownPersistsAcrossRecovery(t *testing.T) {
 
 	s.retryDelay(err)
 	s.retryDelay(err) // cooldown now 10s
-	if got, want := s.wait(), 15*time.Second; got != want {
+	if got, want := s.base(), 15*time.Second; got != want {
 		t.Fatalf("after failures: wait = %v, want %v", got, want)
 	}
 
@@ -72,14 +73,14 @@ func TestCooldownPersistsAcrossRecovery(t *testing.T) {
 	if failed := s.noteSuccess(); failed != 2 {
 		t.Errorf("noteSuccess reported %d prior failures, want 2", failed)
 	}
-	if got, want := s.wait(), 15*time.Second; got != want {
+	if got, want := s.base(), 15*time.Second; got != want {
 		t.Errorf("after 1 success: wait = %v, want %v (unchanged)", got, want)
 	}
 
 	// Only sustained success eases it, and then only halfway.
 	s.noteSuccess()
 	s.noteSuccess()
-	if got, want := s.wait(), 10*time.Second; got != want {
+	if got, want := s.base(), 10*time.Second; got != want {
 		t.Errorf("after %d successes: wait = %v, want %v", cooldownDecayAfter, got, want)
 	}
 
@@ -87,7 +88,7 @@ func TestCooldownPersistsAcrossRecovery(t *testing.T) {
 	for range 3 * cooldownDecayAfter {
 		s.noteSuccess()
 	}
-	if got := s.wait(); got != s.interval {
+	if got := s.base(); got != s.interval {
 		t.Errorf("after sustained success: wait = %v, want %v", got, s.interval)
 	}
 	if s.cooldown != 0 {
@@ -103,8 +104,8 @@ func TestNoCooldownWithoutFailure(t *testing.T) {
 			t.Fatalf("noteSuccess reported %d failures on a healthy source", failed)
 		}
 	}
-	if s.cooldown != 0 || s.wait() != s.interval {
-		t.Errorf("healthy source drifted: cooldown=%v wait=%v", s.cooldown, s.wait())
+	if s.cooldown != 0 || s.base() != s.interval {
+		t.Errorf("healthy source drifted: cooldown=%v wait=%v", s.cooldown, s.base())
 	}
 }
 
@@ -196,10 +197,11 @@ func TestPerProviderInterval(t *testing.T) {
 	}
 }
 
-// Both providers 429 at a 2s interval, so the default must stay well clear of
-// it. This is a regression guard: the number was measured, not documented, and
-// is easy to "optimise" back into rate-limit territory.
-func TestDefaultProvidersUseMeasuredSafeInterval(t *testing.T) {
+// The default must stay well clear of the documented limits: airplanes.live
+// permits 1 req/s and adsb.lol's is dynamic. This is a regression guard against
+// someone "optimising" the interval toward the ceiling -- there is no benefit to
+// collect, and doing so once cost this project its API access.
+func TestDefaultProvidersStayWellUnderDocumentedLimits(t *testing.T) {
 	c := &Config{Fleet: []Member{{Rego: "VH-YSO"}}}
 	if err := c.normalise(); err != nil {
 		t.Fatal(err)
@@ -212,8 +214,9 @@ func TestDefaultProvidersUseMeasuredSafeInterval(t *testing.T) {
 		if s.interval != defaultPollInterval {
 			t.Errorf("%s: interval = %v, want %v", s.Name, s.interval, defaultPollInterval)
 		}
+		// airplanes.live documents 1 req/s; stay several times clear of it.
 		if s.interval < 3*time.Second {
-			t.Errorf("%s: interval %v is in rate-limit territory", s.Name, s.interval)
+			t.Errorf("%s: interval %v is too close to the documented limit", s.Name, s.interval)
 		}
 	}
 }
@@ -269,5 +272,56 @@ func TestStaggerThreeSources(t *testing.T) {
 		if got := p.startOffset(i); got != w {
 			t.Errorf("source %d offset = %v, want %v", i, got, w)
 		}
+	}
+}
+
+// A 403 is an access refusal, not a rate limit: it will not clear by waiting,
+// so it must jump straight to the long backoff rather than creeping up from
+// the base interval and hammering a provider that has already said no.
+func TestBlockedGoesStraightToLongBackoff(t *testing.T) {
+	s := &source{interval: 5 * time.Second}
+	blocked := &httpError{Provider: "airplanes.live", StatusCode: 403,
+		Body: `{"error": "please contact us at contact@airplanes.live"}`}
+
+	if got := s.retryDelay(blocked); got != blockedBackoff {
+		t.Errorf("first 403: delay = %v, want %v", got, blockedBackoff)
+	}
+	// Repeated blocks must not compound into something absurd.
+	for range 5 {
+		if got := s.retryDelay(blocked); got != blockedBackoff {
+			t.Errorf("repeated 403: delay = %v, want %v", got, blockedBackoff)
+		}
+	}
+	if got := (&httpError{StatusCode: 401}).Blocked(); !got {
+		t.Error("401 should count as blocked")
+	}
+	for _, code := range []int{429, 500, 502, 200} {
+		if (&httpError{StatusCode: code}).Blocked() {
+			t.Errorf("%d should not count as blocked", code)
+		}
+	}
+}
+
+// The body explains the refusal; "http 403" alone does not distinguish a block
+// from a rate limit, which is exactly the confusion that cost us access.
+func TestHTTPErrorIncludesBody(t *testing.T) {
+	e := &httpError{Provider: "airplanes.live", StatusCode: 403,
+		Body: `{"error": "please contact us"}`}
+	got := e.Error()
+	if !strings.Contains(got, "403") || !strings.Contains(got, "please contact us") {
+		t.Errorf("error message loses the diagnosis: %q", got)
+	}
+}
+
+// Failures must be counted once per failure. They were briefly counted twice,
+// which silently inflated every "recovered after N failures" log line.
+func TestFailuresCountedOnce(t *testing.T) {
+	s := &source{interval: time.Second}
+	err := &httpError{StatusCode: 429}
+	s.retryDelay(err)
+	s.retryDelay(err)
+	s.retryDelay(err)
+	if failed := s.noteSuccess(); failed != 3 {
+		t.Errorf("reported %d failures after exactly 3, want 3", failed)
 	}
 }

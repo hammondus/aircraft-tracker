@@ -42,26 +42,91 @@ Rejected:
 
 ### Rate limits and poll scheduling
 
-**Neither provider advertises its limit in response headers**, and the commonly
-quoted "1 request per second" turned out to be optimistic for both. Measured
-over an evening:
+Both providers publish their policy. Neither advertises it in response headers,
+which is what makes it easy to skip reading the documentation — a mistake that
+cost this project its API access, see the incident below.
 
-| Interval | Result |
-|---|---|
-| 1 s | adsb.lol returned `HTTP 429` within about four seconds |
-| 2 s | **both** providers 429'd intermittently — roughly every six to ten requests, recovering then tripping again |
-| 5 s | ran clean |
+| Provider | Documented limit | Source |
+|---|---|---|
+| airplanes.live | "The Airplanes.live REST API is rate limited to **1 request per second**." | <https://airplanes.live/api-guide/> |
+| adsb.lol | "Rate limits are **dynamic based on the environment load**." | <https://github.com/adsblol/api> |
 
-A six-request burst from cold returned 200s, so it is not a strict per-second
-gate. The intermittent pattern looks like a token bucket refilling slower than
-one per two seconds, and the fix for that is a longer interval, not more
-backoff. airplanes.live sends `Retry-After` (observed: 8–10 s); adsb.lol does
-not.
+airplanes.live also documents a cap of 1000 hex codes or 8000 characters per
+query, which our fleet will never approach, and links terms of use.
 
-**Treat 5 s as provisional.** A great many requests were made from one IP while
-characterising this, which may itself have depleted a longer-window budget, so
-the true sustainable rate could well be faster. Worth re-checking in normal
-operation. The design is deliberately insensitive to getting it exactly right.
+adsb.lol's answer is the more interesting one: there is no fixed number to
+discover, because the limit moves with their load. Any attempt to measure it
+yields a number that is only true for that moment. This is the direct
+justification for the adaptive cooldown below — responding to refusals is the
+only correct strategy against a limit that is defined as variable.
+
+**We poll every 10 s per provider, ten times slower than airplanes.live
+permits.** That is a deliberate choice, not a measured constraint:
+
+- Two aircraft need nothing faster. Staggered across two providers this
+  refreshes fleet state every 5 s, and dead reckoning covers the gap.
+- adsb.lol's limit is dynamic, so headroom is worth more than throughput.
+- These are free community services carrying our production dependency.
+
+### Idle polling
+
+A two-aircraft fleet is on the ground for most of the day, and confirming that
+six times a minute spends a free service's capacity to learn nothing. Polling
+rate therefore follows **fleet activity first, clock second**:
+
+| Fleet state | Time | Interval |
+|---|---|---|
+| Any aircraft detected within 10 min | any | **10 s** |
+| Nothing detected | 20:00–12:00 UTC (day, AEST) | **2 min** |
+| Nothing detected | 12:00–20:00 UTC (night, AEST) | **5 min** |
+
+Time of day only matters while idle. An aircraft detected at 3am is tracked at
+the full rate like any other, because the reason to watch it is identical.
+
+**Being on the ground counts as detected.** An aircraft parked with its
+transponder powered appears with `alt_baro: "ground"`, and that is a strong
+signal of an imminent departure — exactly when the fast rate earns its keep.
+The failure mode is a maintenance ground-run holding the fast rate for an hour,
+which costs nothing that matters.
+
+Estimated effect: roughly a **70% reduction** in upstream requests against a
+flat 10 s poll, assuming four active hours a day.
+
+**The cost is wake-up latency.** A departure is invisible until the next idle
+poll — up to two minutes by day, five overnight. That is an accepted trade for
+a situational-awareness display, not an oversight. If it ever matters, shorten
+`idle_interval`; the mechanism is already there.
+
+Coverage gaps longer than `idle_timeout` will drop an airborne aircraft back to
+idle mid-flight, which is a real scenario for VH-TAV at low level. The cost is
+small: the aircraft has already been invisible for ten minutes at that point,
+and re-acquisition adds at most one idle interval.
+
+The window is expressed in UTC rather than local time deliberately. An
+Australian local window would shift by an hour twice a year when daylight
+saving starts and stops — a silent behaviour change nobody would connect to the
+clocks going back. UTC costs a moment's mental arithmetic once and never
+surprises anyone.
+
+Idle rates may only ever *slow* polling. An idle interval faster than the
+active interval, or a quiet-hours interval faster than the day idle interval,
+is rejected at startup rather than silently applied — otherwise "idle" becomes
+a route to polling harder while nothing is happening, which is precisely
+backwards. The same guard applies to failure backoff: a failing provider waits
+the longer of its backoff and the current idle rate, so it can never end up
+polled faster than a healthy one.
+
+Mode transitions are logged, once, from the broadcast goroutine rather than per
+provider. Several minutes of silence between polls is otherwise
+indistinguishable from a wedged poller at three in the morning.
+
+**Known consequence:** `liveFor` is 15 s, so an aircraft airborne while idle
+renders as `stale` until the mode flips back — at most one idle interval, since
+the first detection restores the fast rate. Raising `liveFor` to compensate
+would be the wrong fix: it also bounds client-side dead reckoning, and
+extrapolating a velocity vector for minutes would put an airliner kilometres
+from where it actually is. Inventing position is worse than admitting
+staleness.
 
 This drove three choices:
 
@@ -120,6 +185,61 @@ that; this can.
 
 It is the only adaptive machinery in the program, and it exists because
 measurement demanded it rather than because it seemed prudent.
+
+### Incident: airplanes.live blocked the development IP
+
+**On 2026-08-12, characterising the rate limits above got this project's
+development IP blocked by airplanes.live.** It now returns:
+
+```
+HTTP 403 {"error": "please contact us at contact@airplanes.live"}
+```
+
+adsb.lol was unaffected and still returns 200.
+
+**The root cause was not reading the documentation.** airplanes.live publishes
+its limit plainly — 1 request per second, at
+<https://airplanes.live/api-guide/> — and it was never consulted. Instead the
+limit was "discovered" empirically: several hundred requests in an evening
+across a coverage probe, three characterisation runs and repeated live tests,
+all from one address, escalating after each refusal.
+
+Two things follow from that, and both are worse than the wasted effort:
+
+1. **The whole exercise was unnecessary.** The number was a documented fact,
+   one page fetch away.
+2. **The measurements were wrong.** The recorded conclusion was that "2 s trips
+   both providers" and "5 s is the safe rate". Neither is true as a general
+   fact. Those runs were measuring a state this project had itself degraded —
+   an accumulating penalty and then an outright block — not the providers'
+   steady-state behaviour. The documented limit is five times *faster* than
+   what was concluded. Empirical numbers gathered while provoking a service
+   describe the provocation, not the service.
+
+Consequences and handling:
+
+1. **Clearing it needs a human**, at `contact@airplanes.live`. Waiting will not
+   fix it.
+2. **The production server has a different IP** and is very unlikely to be
+   affected. At the shipped 5 s interval it will not repeat this.
+3. **The application degrades rather than fails** — adsb.lol carries the fleet
+   alone. This is the redundancy in §1 doing its job, and is the second time
+   during development that one provider covered for the other.
+
+Two code changes came out of it:
+
+- **403/401 is distinguished from 429.** A block does not clear on a two-minute
+  timer, so it jumps straight to a 15 minute `blockedBackoff` and logs a
+  distinct, actionable message once — rather than repeating `http 403` every
+  half-minute, which reads like an ordinary rate limit.
+- **The response body is captured** (truncated) into the error. `http 403`
+  alone gave no hint that this was a block rather than a limit; the body said
+  so plainly and was being discarded.
+
+**If a provider's limit is ever in question again:** read their documentation
+first, and treat what it says as the answer. If it is genuinely undocumented,
+pick a conservative rate and let the backoff adapt — do not go looking for the
+ceiling. The first refusal is a stop signal, not a data point.
 
 ### Licensing
 

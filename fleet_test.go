@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,5 +79,37 @@ func TestExampleConfigIsValid(t *testing.T) {
 	}
 	if len(c.Fleet) != 2 {
 		t.Errorf("got %d aircraft", len(c.Fleet))
+	}
+}
+
+// The example config must not pin intervals: the measured-safe defaults live in
+// code, and duplicating them here means two places to update and one to forget.
+// That drift already happened once -- the example pinned 2s after the default
+// moved to 5s, so the app quietly ran at a rate that draws rate limits.
+func TestExampleConfigDoesNotPinIntervals(t *testing.T) {
+	b, err := os.ReadFile("config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{
+		"poll_interval", "broadcast_interval", "providers",
+		"idle_interval", "idle_timeout", "quiet_hours",
+	} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("example config pins %q; leave it to the defaults", k)
+		}
+	}
+
+	c, err := LoadConfig("config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PollInterval.Duration != defaultPollInterval {
+		t.Errorf("example resolves to %v, want the measured default %v",
+			c.PollInterval.Duration, defaultPollInterval)
 	}
 }

@@ -23,19 +23,32 @@ type Provider struct {
 	Interval duration `json:"interval,omitzero"`
 }
 
-// httpError carries the status and any Retry-After so the caller can back off
-// as instructed rather than guessing.
+// httpError carries the status, any Retry-After, and a snippet of the response
+// body so the caller can back off as instructed rather than guessing -- and so
+// the log says what actually went wrong.
 type httpError struct {
 	Provider   string
 	StatusCode int
 	RetryAfter time.Duration // zero when the header was absent or unparseable
+	Body       string        // truncated; these APIs explain refusals in the body
 }
 
 func (e *httpError) Error() string {
+	s := fmt.Sprintf("%s: http %d", e.Provider, e.StatusCode)
 	if e.RetryAfter > 0 {
-		return fmt.Sprintf("%s: http %d (retry after %s)", e.Provider, e.StatusCode, e.RetryAfter)
+		s += fmt.Sprintf(" (retry after %s)", e.RetryAfter)
 	}
-	return fmt.Sprintf("%s: http %d", e.Provider, e.StatusCode)
+	if e.Body != "" {
+		s += ": " + e.Body
+	}
+	return s
+}
+
+// Blocked reports whether this is an access refusal rather than a transient
+// limit. The distinction matters: a 429 clears on its own, a 403 does not, and
+// retrying one every couple of minutes only compounds whatever caused it.
+func (e *httpError) Blocked() bool {
+	return e.StatusCode == http.StatusForbidden || e.StatusCode == http.StatusUnauthorized
 }
 
 // retryAfter parses the header in both permitted forms: delta-seconds, or an
@@ -60,32 +73,55 @@ func retryAfter(h http.Header, now time.Time) time.Duration {
 	return 0
 }
 
-// defaultPollInterval applies to any provider that does not set its own. It is
-// set from measurement rather than documentation: neither service publishes a
-// limit we could rely on, and neither advertises one in response headers.
+// defaultPollInterval applies to any provider that does not set its own.
 //
-// Measured, both providers, evening AEST:
-//   - 1s      -- adsb.lol returned HTTP 429 within about four seconds.
-//   - 2s      -- both providers 429'd intermittently, roughly every six to ten
-//     requests, recovering and then tripping again.
-//   - 5s      -- ran clean.
+// Documented limits:
+//   - airplanes.live: 1 request per second. https://airplanes.live/api-guide/
+//   - adsb.lol:       "dynamic based on the environment load", i.e. no fixed
+//     number exists. https://github.com/adsblol/api
 //
-// The intermittent pattern looks like a token bucket refilling slower than one
-// per two seconds, rather than a fixed-rate gate; the fix for that is a longer
-// interval, not more backoff.
+// 10s is therefore ten times slower than airplanes.live permits, deliberately.
+// Two aircraft need nothing faster; adsb.lol's limit moves with their load so
+// headroom is worth more than throughput; and these are free services carrying
+// a production dependency. Do not "optimise" this toward the documented ceiling
+// without a reason -- there is no benefit to collect.
 //
-// Treat this number as provisional. A lot of requests were made from one IP
-// while characterising this, which may itself have depleted a longer-window
-// budget, so the true sustainable rate could be faster than 5s. It is worth
-// re-checking in normal operation. The design is deliberately insensitive to
-// getting it exactly right: Retry-After is honoured, failures back off, and two
-// providers cover each other.
-//
-// 5s per provider is not 5s of staleness. Sources are staggered, so two
-// providers refresh fleet state every ~2.5s, and client-side dead reckoning
-// smooths the gap -- an airliner covers about 500m in that time, which
+// 10s per provider is not 10s of staleness. Sources are staggered, so two
+// providers refresh fleet state every ~5s, and client-side dead reckoning
+// smooths the gap: an airliner covers about a kilometre in that time, which
 // interpolates cleanly from ground speed and track.
-const defaultPollInterval = 5 * time.Second
+//
+// Read the provider's documentation before changing this. Measuring their
+// limits empirically got this project's IP blocked -- see DESIGN-DECISIONS.md,
+// "Incident: airplanes.live blocked the development IP".
+const defaultPollInterval = 10 * time.Second
+
+// Idle rates. A two-aircraft fleet is on the ground for most of the day, and
+// confirming that six times a minute spends a free service's capacity to learn
+// nothing. Polling drops to defaultIdleInterval once nothing has been detected
+// for defaultIdleTimeout, and rises back to defaultPollInterval the moment any
+// aircraft appears -- at any hour, because the reason to watch it is the same
+// at 3am as at noon.
+//
+// The cost is wake-up latency: a departure is invisible until the next idle
+// poll, so up to two minutes by day and five overnight. That is an accepted
+// trade for a situational-awareness display, not an oversight.
+const (
+	defaultIdleInterval = 2 * time.Minute
+	defaultIdleTimeout  = 10 * time.Minute
+	defaultQuietIdle    = 5 * time.Minute
+)
+
+// defaultQuietHours slows the *idle* rate overnight. 12:00-20:00 UTC is
+// 22:00-06:00 AEST, chosen in UTC so the window does not shift when daylight
+// saving starts.
+func defaultQuietHours() QuietHours {
+	return QuietHours{
+		From:         12 * 60,
+		To:           20 * 60,
+		IdleInterval: duration{defaultQuietIdle},
+	}
+}
 
 // DefaultProviders is deliberately more than one. The dominant failure mode of
 // this tool is not knowing where an aircraft is because no volunteer receiver
@@ -218,11 +254,14 @@ func (p Provider) poll(ctx context.Context, c *http.Client, hexes string) ([]Fix
 	recv := time.Now()
 
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		// Keep a little of the body: both providers explain refusals there, and
+		// "http 403" alone does not distinguish a rate limit from a block.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		return nil, &httpError{
 			Provider:   p.Name,
 			StatusCode: resp.StatusCode,
 			RetryAfter: retryAfter(resp.Header, recv),
+			Body:       strings.TrimSpace(string(body)),
 		}
 	}
 	fixes, err := decode(resp.Body, p.Name, recv)
