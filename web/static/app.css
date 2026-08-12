@@ -1,0 +1,118 @@
+:root {
+  color-scheme: dark;
+  --bg: #10141a;
+  --panel: #171d26;
+  --line: #26303d;
+  --text: #dfe6ee;
+  --dim: #8b98a8;
+  --live: #4ade80;
+  --stale: #fbbf24;
+  --none: #64748b;
+  --error: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Tabular figures stop coordinates and altitudes jittering as they update. */
+td, .badge { font-variant-numeric: tabular-nums; }
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+h1 { font-size: 1.05rem; margin: 0; font-weight: 600; letter-spacing: 0.01em; }
+header form { margin-left: auto; }
+
+.link {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.link:hover { color: var(--text); }
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+.badge[data-state="open"] { color: var(--live); border-color: currentColor; }
+.badge[data-state="lost"] { color: var(--error); border-color: currentColor; }
+
+main { padding: 1.25rem; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); }
+thead th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); font-weight: 600; }
+tbody th { font-weight: 600; }
+.type { color: var(--dim); font-weight: 400; margin-left: 0.5rem; font-size: 0.8rem; }
+
+/* Status is the most important column: an aircraft nobody can hear must not
+   look the same as one sitting on a taxiway. */
+.status { font-weight: 600; }
+tr[data-status="live"] .status { color: var(--live); }
+tr[data-status="stale"] .status { color: var(--stale); }
+tr[data-status="no_contact"] .status { color: var(--none); }
+tr[data-status="no_contact"] td:not(.status) { color: var(--none); }
+tr[data-mlat="true"] .src::after {
+  content: "mlat";
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--stale);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 0.25rem;
+}
+
+.attrib { color: var(--dim); font-size: 0.78rem; margin-top: 1.5rem; }
+.attrib a { color: var(--dim); }
+
+.centred { display: grid; place-items: center; min-height: 100vh; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.75rem;
+  width: min(22rem, 92vw);
+  display: grid;
+  gap: 0.6rem;
+}
+.card h1 { margin-bottom: 0.5rem; }
+label { font-size: 0.8rem; color: var(--dim); }
+input[type="password"] {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+input[type="password"]:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
+button[type="submit"] {
+  margin-top: 0.4rem;
+  background: var(--live);
+  color: #06210f;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.55rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.error { color: var(--error); margin: 0; font-size: 0.85rem; }

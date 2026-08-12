@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Tracker</title>
+<link rel="stylesheet" href="{{.CSS}}">
+</head>
+<body>
+<header>
+  <h1>Fleet Tracker</h1>
+  <span id="conn" class="badge" data-state="connecting">connecting</span>
+  <form method="post" action="/logout"><button type="submit" class="link">Sign out</button></form>
+</header>
+
+<main>
+  <table id="fleet">
+    <thead>
+      <tr><th>Aircraft</th><th>Status</th><th>Position</th><th>Altitude</th><th>Speed</th><th>Track</th><th>Age</th><th>Source</th></tr>
+    </thead>
+    <tbody>
+      {{range .Fleet}}
+      <tr data-hex="{{.Hex}}">
+        <th scope="row">{{.Rego}}<span class="type">{{.Type}}</span></th>
+        <td class="status">—</td><td class="pos">—</td><td class="alt">—</td>
+        <td class="gs">—</td><td class="track">—</td><td class="age">—</td><td class="src">—</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="attrib">
+    Positions from <a href="https://adsb.lol/">adsb.lol</a> (ODbL) and
+    <a href="https://airplanes.live/">airplanes.live</a>.
+    Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.
+  </p>
+</main>
+<script src="{{.JS}}" defer></script>
+</body>
+</html>

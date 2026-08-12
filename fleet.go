@@ -100,6 +100,14 @@ type Config struct {
 	QuietHours QuietHours `json:"quiet_hours"`
 	Providers  []Provider `json:"providers"`
 	Fleet      []Member   `json:"fleet"`
+
+	// PasswordHash is the shared login password, encoded by `-hashpw`. Empty
+	// disables authentication, which is refused unless -insecure is also given
+	// -- an accidentally unauthenticated deployment should not be one typo away.
+	PasswordHash string   `json:"password_hash"`
+	SessionTTL   duration `json:"session_ttl"`
+	// TilesPath is the Protomaps archive built by `make tiles`.
+	TilesPath string `json:"tiles_path"`
 }
 
 // vhToHex derives an ICAO 24-bit address from an Australian VH- registration.
@@ -159,6 +167,12 @@ func (c *Config) normalise() error {
 	}
 	if c.BroadcastInterval.Duration <= 0 {
 		c.BroadcastInterval.Duration = time.Second
+	}
+	if c.SessionTTL.Duration <= 0 {
+		c.SessionTTL.Duration = defaultSessionTTL
+	}
+	if c.TilesPath == "" {
+		c.TilesPath = defaultTilesPath
 	}
 	if c.IdleInterval.Duration <= 0 {
 		c.IdleInterval.Duration = defaultIdleInterval

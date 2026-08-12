@@ -435,17 +435,61 @@ entire thing can be read end to end.
 ## 10. Authentication
 
 Single shared password, exchanged for a session cookie
-(`HttpOnly`, `Secure`, `SameSite=Lax`), sessions held in memory. The password
-is stored as a PBKDF2 hash in the config file.
+(`HttpOnly`, `Secure`, `SameSite=Lax`), sessions held in memory.
 
 `crypto/pbkdf2` has been in the standard library since Go 1.24, so this needs
-no `golang.org/x/crypto` dependency.
+no `golang.org/x/crypto` dependency. 600,000 iterations, OWASP's current
+guidance for PBKDF2-SHA256. That cost is paid once per login, not per request —
+the cookie carries every request after it — so it is invisible to users and
+expensive for anyone guessing.
+
+Hashes are self-describing, `pbkdf2-sha256$<iterations>$<salt>$<key>`, so the
+iteration count can be raised later without invalidating hashes already sitting
+in config files.
 
 Handled in the application rather than as HTTP basic auth at nginx proxy
 manager: basic auth is unpleasant on phones, cannot be logged out of, and
 leaves no room for per-user accounts later. Sessions in memory mean a restart
 logs everyone out, which is acceptable for an internal tool and avoids a
 session store.
+
+### Setup
+
+```sh
+printf '%s' 'your-password' | ./aircraft-tracker -hashpw
+```
+
+Stdin rather than a flag, because an argument lands in shell history and in the
+process list. This does not disable terminal echo — doing so without a
+dependency means shelling out to `stty`, which is not worth it for a one-off
+local command — so pipe the password rather than typing it at a prompt.
+
+**An empty `password_hash` refuses to start** unless `-insecure` is also
+passed. An accidentally unauthenticated deployment should not be one missing
+config key away, and the error message says exactly how to fix it.
+
+### Details worth knowing
+
+- **Sessions slide.** Expiry is extended on use, so a display left open on the
+  ops wall does not sign itself out mid-shift, while an abandoned session still
+  lapses after `session_ttl` (default 7 days). Expired entries are swept on the
+  next login rather than by a background timer — logins are rare and the map is
+  tiny.
+- **Concurrent password verification is capped at two.** PBKDF2 is deliberately
+  expensive, which makes an unbounded login endpoint a way to exhaust the CPU.
+  The same cap throttles brute force to a few attempts a second.
+- **`Secure` is set from `X-Forwarded-Proto`.** Behind nginx proxy manager the
+  connection to us is plain HTTP, so the proxy's header is the only evidence
+  the client used TLS. Trusting a client-settable header is safe only because
+  this always sits behind a proxy that overwrites it; exposed directly, the
+  worst outcome is a cookie marked `Secure` that need not be.
+- **Redirect versus status.** A browser navigating to a protected page is
+  redirected to `/login`; anything else — `EventSource`, a tile request — gets
+  `401`. Sending an HTML login page to a caller expecting `text/event-stream`
+  produces a confusing body where a status code would be actionable. The client
+  uses exactly this to detect an expired session and reload.
+- **`?next=` cannot leave the site.** Only a local absolute path is honoured,
+  so the login page is not an open redirect.
 
 ## 11. HTTP caching
 
@@ -459,12 +503,26 @@ Applied at the render chokepoint, per resource:
 | `australia.<hash>.pmtiles` | `public, max-age=31536000, immutable` | Same, and it is large enough that caching matters a great deal |
 | `/favicon.ico` | `max-age=3600` | Unhashed path whose content can change |
 
+The default is set by one middleware wrapping the whole mux, rather than per
+handler. Handlers needing something stronger set their own `Cache-Control`,
+which replaces it — so the strict cases are opt-in and visible at the call site.
+
+**CSS and JS are embedded** with `go:embed` and served from URLs containing a
+hash of their own content (`/static/app.<hash>.css`). Hashing once at startup
+is correct *because* they are embedded: the bytes are fixed at build time and
+cannot change under a running process.
+
 **Deviation worth flagging:** the standing rule is to hash runtime-read assets
 per request so an edit without a restart cannot serve stale bytes. The
-`.pmtiles` file is on the order of a gigabyte, so hashing it per request is not
-viable. We hash it once at startup and re-stat it on each request, falling back
-to `size-mtime` as the cache-busting token if it has changed. Tile data changes
-only on a deliberate map rebuild, so the weaker guarantee is proportionate.
+`.pmtiles` archive is a gigabyte, so hashing it per request is not viable.
+Instead its URL carries a `size-mtime` token, re-stat'ed on each page render.
+Tile data changes only on a deliberate `make tiles`, which changes both, so the
+weaker guarantee is proportionate.
+
+Range requests matter here: MapLibre reads the archive by byte range, and
+serving it without range support would mean shipping a gigabyte per tile.
+`http.ServeContent` implements this for us, which is why the tile handler is
+about fifteen lines.
 
 ## 12. API schema gotchas
 

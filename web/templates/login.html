@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Fleet Tracker</title>
+<link rel="stylesheet" href="{{.CSS}}">
+</head>
+<body class="centred">
+  <form class="card" method="post" action="/login">
+    <h1>Fleet Tracker</h1>
+    {{if .Error}}<p class="error" role="alert">Incorrect password.</p>{{end}}
+    <input type="hidden" name="next" value="{{.Next}}">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

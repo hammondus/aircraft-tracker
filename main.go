@@ -5,10 +5,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,11 +24,30 @@ const userAgent = "aircraft-tracker/0.1 (+https://blueskyflying.com.au)"
 func main() {
 	cfgPath := flag.String("config", "config.json", "path to config file")
 	verbose := flag.Bool("v", false, "log every position fix, not just status changes")
+	hashpw := flag.Bool("hashpw", false, "read a password from stdin and print its hash for config.json")
+	insecure := flag.Bool("insecure", false, "run without authentication (password_hash empty)")
 	flag.Parse()
+
+	if *hashpw {
+		if err := printPasswordHash(); err != nil {
+			log.Fatalf("hashpw: %v", err)
+		}
+		return
+	}
 
 	cfg, err := LoadConfig(*cfgPath)
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+	// An unauthenticated deployment should not be one missing config key away.
+	if cfg.PasswordHash == "" && !*insecure {
+		log.Fatalf("config: password_hash is empty. Set one with:\n"+
+			"    printf '%%s' 'your-password' | %s -hashpw\n"+
+			"or pass -insecure to run without authentication deliberately.",
+			os.Args[0])
+	}
+	if cfg.PasswordHash == "" {
+		log.Print("WARNING: running without authentication (-insecure)")
 	}
 
 	log.Printf("tracking %d aircraft; broadcast every %s",
@@ -55,14 +76,14 @@ func main() {
 		logStates(states)
 	}
 
-	mux := http.NewServeMux()
-	// TODO: auth. This is unauthenticated until the web layer lands; do not
-	// expose it beyond localhost before then.
-	mux.Handle("GET /events", hub)
+	web, err := newServer(cfg, hub, p)
+	if err != nil {
+		log.Fatalf("web: %v", err)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           mux,
+		Handler:           web.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Deliberately no WriteTimeout: SSE responses are long-lived and a
 		// global deadline would sever every stream on a timer. The SSE handler
@@ -127,4 +148,31 @@ func stateLogger(verbose bool) func([]State) {
 			log.Printf("%-7s %s", s.Rego, line)
 		}
 	}
+}
+
+// printPasswordHash reads a password from stdin and prints the encoded hash to
+// paste into config.json.
+//
+// Stdin rather than a flag: an argument would land in shell history and in the
+// process list. Reading it does not disable terminal echo -- doing so without a
+// dependency means shelling out to stty, which is not worth it for a one-off
+// local command. Pipe it instead:
+//
+//	printf '%s' 'your-password' | ./aircraft-tracker -hashpw
+func printPasswordHash() error {
+	in, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+	if err != nil {
+		return err
+	}
+	pw := strings.TrimRight(string(in), "\r\n")
+	if pw == "" {
+		return fmt.Errorf("no password on stdin; try: printf '%%s' 'secret' | %s -hashpw", os.Args[0])
+	}
+	hash, err := HashPassword(pw)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", hash)
+	fmt.Fprintln(os.Stderr, "\nAdd to config.json as:\n  \"password_hash\": \""+hash+"\"")
+	return nil
 }
