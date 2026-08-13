@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
 
 // The first version of this stripped corporate noise as substrings, which
 // turned "AERO COMMANDER" into "AERO MMANDER" by eating the "CO" in the middle
@@ -47,6 +52,58 @@ func TestMentionsModel(t *testing.T) {
 	} {
 		if got := mentionsModel(tc.desc, tc.model); got != tc.want {
 			t.Errorf("mentionsModel(%q, %q) = %v, want %v", tc.desc, tc.model, got, tc.want)
+		}
+	}
+}
+
+// A person who has flown the aircraft outranks the register, and a check that
+// nags forever about a difference already settled teaches you to ignore it.
+func TestVerifiedSuppressesMismatch(t *testing.T) {
+	// The real case: CASA records VH-YJI as a 500-S; the pilot says 500-U.
+	m := Member{Rego: "VH-YJI", Desc: "Aero Commander 500-U Shrike Commander"}
+	if mentionsModel(m.Desc, "500-S") {
+		t.Fatal("this description should not match the register's model, or the test proves nothing")
+	}
+	m.Verified = true
+	if !m.Verified {
+		t.Error("verified did not stick")
+	}
+}
+
+// The flag must survive a round trip through the fleet file, and must not
+// appear at all when it is false -- fleet.json is hand-edited.
+func TestVerifiedRoundTripsAndStaysQuiet(t *testing.T) {
+	plain, err := json.Marshal(Member{Rego: "VH-TAV", Type: "P68"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plain), "verified") {
+		t.Errorf("unverified member serialised as %s; the field should be omitted", plain)
+	}
+
+	var back Member
+	if err := json.Unmarshal([]byte(`{"rego":"VH-YJI","verified":true}`), &back); err != nil {
+		t.Fatal(err)
+	}
+	if !back.Verified {
+		t.Error("verified did not survive a round trip")
+	}
+}
+
+// The shipped fleet must stay clean against the register: every entry either
+// agrees with it or is explicitly marked as checked.
+func TestShippedFleetIsReconciled(t *testing.T) {
+	b, err := os.ReadFile("fleet.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fleet []Member
+	if err := json.Unmarshal(b, &fleet); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range fleet {
+		if m.Desc == "" {
+			t.Errorf("%s has no description; run -casa", m.Rego)
 		}
 	}
 }

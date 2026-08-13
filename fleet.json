@@ -7,7 +7,7 @@
   {
     "rego": "VH-VSO",
     "type": "B190",
-    "desc": "Beech 1900C-1"
+    "desc": "Beech 1900C"
   },
   {
     "rego": "VH-OYM",
@@ -22,7 +22,7 @@
   {
     "rego": "VH-YSO",
     "type": "B190",
-    "desc": "Beech 1900C-1"
+    "desc": "Beech 1900C"
   },
   {
     "rego": "VH-IJM",
@@ -37,7 +37,7 @@
   {
     "rego": "VH-NWI",
     "type": "PC12",
-    "desc": "Pilatus PC-12"
+    "desc": "Pilatus PC-12/45"
   },
   {
     "rego": "VH-MWW",
@@ -52,16 +52,19 @@
   {
     "rego": "VH-YJI",
     "type": "AC50",
-    "desc": "Aero Commander 500-S"
+    "desc": "Aero Commander 500 Shrike",
+    "verified": true
   },
   {
     "rego": "VH-YJE",
     "type": "AC50",
-    "desc": "Aero Commander 500-S"
+    "desc": "Aero Commander 500 Shrike",
+    "verified": true
   },
   {
     "rego": "VH-WAM",
     "type": "AC50",
-    "desc": "Aero Commander 500-S"
+    "desc": "Aero Commander 500 Shrike",
+    "verified": true
   }
 ]

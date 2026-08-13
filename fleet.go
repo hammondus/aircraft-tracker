@@ -16,6 +16,16 @@ type Member struct {
 	Rego string `json:"rego"`
 	Type string `json:"type,omitempty"` // ICAO type code, e.g. B190
 	Desc string `json:"desc,omitempty"` // human readable, e.g. "Beech 1900C-1"
+	// Verified records that a person who knows the aircraft has reconciled Desc
+	// against the register and stands by it. It silences -casa for this entry.
+	//
+	// Sometimes that is because the register is wrong; more often it is because
+	// the difference does not matter here. The three Commanders are recorded as
+	// "Aero Commander 500 Shrike" while the register splits them by variant --
+	// a distinction that means something to an engineer and nothing to a map.
+	// Either way, a check that nags forever about a difference already settled
+	// teaches you to ignore it.
+	Verified bool `json:"verified,omitempty"`
 }
 
 // duration lets the config file say "1s" instead of a nanosecond count.

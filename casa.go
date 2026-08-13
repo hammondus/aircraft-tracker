@@ -172,10 +172,13 @@ func checkFleetAgainstCASA(path string) error {
 			m.Desc = full
 			changed++
 			fmt.Printf("%-8s filled in       %s\n", m.Rego, full)
+		case m.Verified:
+			fmt.Printf("%-8s verified        %s (register says %q)\n", m.Rego, m.Desc, full)
 		case !mentionsModel(m.Desc, rec.Model):
 			problems++
-			fmt.Printf("%-8s MISMATCH        have %q, register says %q (%s)\n",
-				m.Rego, m.Desc, full, rec.Holder)
+			fmt.Printf("%-8s MISMATCH        have %q, register says %q (%s)\n"+
+				"%-8s                 set \"verified\": true if you know better than the register\n",
+				m.Rego, m.Desc, full, rec.Holder, "")
 		default:
 			fmt.Printf("%-8s ok              %s — %s\n", m.Rego, full, rec.Holder)
 		}
