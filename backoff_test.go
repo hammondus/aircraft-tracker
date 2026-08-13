@@ -207,8 +207,15 @@ func TestDefaultProvidersStayWellUnderDocumentedLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewPoller(c)
-	if len(p.sources) != 3 {
-		t.Fatalf("got %d default providers, want 3", len(p.sources))
+	// Deliberately not pinned to a count: providers come and go, and airplanes.live
+	// is currently out while it has us blocked. What must hold is that there is
+	// more than one -- redundancy across independent receiver networks is the
+	// design -- and that none is polled near its documented limit.
+	if len(p.sources) < 2 {
+		t.Fatalf("got %d default providers; redundancy needs at least two", len(p.sources))
+	}
+	if len(p.sources) != len(DefaultProviders()) {
+		t.Errorf("poller has %d sources for %d providers", len(p.sources), len(DefaultProviders()))
 	}
 	for _, s := range p.sources {
 		if s.interval != defaultPollInterval {

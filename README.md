@@ -13,8 +13,8 @@ be wrong, is in [DESIGN-DECISIONS.md](DESIGN-DECISIONS.md).
 
 ## What it does
 
-- Polls **adsb.lol**, **airplanes.live** and **adsb.fi**, merging the freshest
-  fix per aircraft. Three networks means three independent sets of receivers.
+- Polls **adsb.lol** and **adsb.fi**, merging the freshest fix per aircraft.
+  Two networks means two independent sets of receivers.
 - Shows the fleet on a MapLibre map with client-side dead reckoning, over a
   Protomaps archive of Australia served from disk.
 - Distinguishes **live**, **stale** and **no contact**, because an aircraft
@@ -177,7 +177,8 @@ nobody could hear it, not that it is on the ground.
 
 ## Attribution
 
-Positions from [adsb.lol](https://adsb.lol), [airplanes.live](https://airplanes.live)
-and [adsb.fi](https://adsb.fi) — all free community networks run on donated
-receivers. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+Positions from [adsb.lol](https://adsb.lol) and [adsb.fi](https://adsb.fi) —
+free community networks run on donated receivers by volunteers. If you use them,
+consider running a receiver and feeding back; several are withdrawing free API
+access under the load automated clients place on them. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
 contributors via [Protomaps](https://protomaps.com).

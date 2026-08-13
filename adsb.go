@@ -138,10 +138,24 @@ func defaultQuietHours() QuietHours {
 func DefaultProviders() []Provider {
 	return []Provider{
 		{Name: "adsb.lol", URL: "https://api.adsb.lol/v2/hex/"},
-		{Name: "airplanes.live", URL: "https://api.airplanes.live/v2/hex/"},
 		{Name: "adsb.fi", URL: "https://opendata.adsb.fi/api/v2/icao/"},
 	}
 }
+
+// airplanesLive is absent from DefaultProviders because, as of August 2026,
+// there is no free API to poll.
+//
+//	HTTP 403 {"error": "please contact us at contact@airplanes.live"}
+//
+// This is not an IP block. Airplanes.live withdrew free API access for everyone,
+// citing bot and AI-agent abuse against 2 billion requests a week, hosting costs
+// up roughly 300% in eighteen months, and a month's egress allowance consumed in
+// four days. Access now expects a feeder plus sponsorship (25 or 50 USD/month),
+// after which they will clear a static IP or user-agent on their firewall.
+//
+// Restore it by putting it back in the list above once sponsored -- nothing else
+// changes, the merge treats any number of providers alike.
+var airplanesLive = Provider{Name: "airplanes.live", URL: "https://api.airplanes.live/v2/hex/"}
 
 // altBaro decodes barometric altitude, which is a number in flight but the
 // string "ground" on the surface. A plain int field fails on the latter.

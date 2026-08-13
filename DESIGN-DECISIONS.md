@@ -61,18 +61,20 @@ whatever type it is. Reuse changes the aeroplane, not the address.
 
 ---
 
-## 1. Data sources: three networks, merged
+## 1. Data sources: two networks, merged
 
-**adsb.lol, airplanes.live and adsb.fi.** All three are free, keyless, and
-serve the same JSON schema (all derive from readsb/tar1090's `aircraft.json`),
+**adsb.lol and adsb.fi.** Both are free, keyless, and serve the same JSON schema (all derive from readsb/tar1090's `aircraft.json`),
 so each additional source costs one URL and nothing else.
 
-We poll **all three and take the freshest fix per aircraft**. The dominant
-failure mode of this project is not knowing where an aircraft is because no
-volunteer receiver could hear it, and each network has a different feeder
-population — so the union of their coverage is strictly better than any one.
-Redundancy is the whole design, and it has already paid for itself twice: once
-when airplanes.live blocked us, once when adsb.lol went dark.
+We poll **both and take the freshest fix per aircraft**. The dominant failure
+mode of this project is not knowing where an aircraft is because no volunteer
+receiver could hear it, and each network has a different feeder population — so
+the union of their coverage is better than either alone. Redundancy has already
+paid for itself twice: once when airplanes.live started refusing, once when
+adsb.lol returned nothing worldwide for hours.
+
+A third source, airplanes.live, was dropped when it withdrew free API access.
+Its URL is kept in `adsb.go` so it can be restored in one line if sponsored.
 
 Rejected:
 
@@ -237,60 +239,44 @@ that; this can.
 It is the only adaptive machinery in the program, and it exists because
 measurement demanded it rather than because it seemed prudent.
 
-### Incident: airplanes.live blocked the development IP
+### Incident: probing rate limits, and what actually happened
 
-**On 2026-08-12, characterising the rate limits above got this project's
-development IP blocked by airplanes.live.** It now returns:
+**On 2026-08-12 this project made several hundred requests to airplanes.live in
+one evening**, across a coverage probe, three rate-limit characterisation runs
+and repeated live tests, escalating after each refusal. That was wrong
+regardless of consequence: their limit is published — 1 request per second, on
+their API guide — and was never read. The number was a documented fact one page
+fetch away.
 
-```
-HTTP 403 {"error": "please contact us at contact@airplanes.live"}
-```
+It also produced measurements that were worthless. The recorded conclusion was
+that "2 s trips both providers" and "5 s is the safe rate". Neither is true. Those
+runs measured a state this project had itself degraded, not the providers'
+behaviour, and the documented limit is five times *faster* than what was
+concluded. **Numbers gathered while provoking a service describe the
+provocation.**
 
-adsb.lol was unaffected and still returns 200.
+**What the 403 turned out to be.** This document previously recorded the
+subsequent `HTTP 403` as an IP block earned by that probing. That was wrong, and
+the correction matters. Airplanes.live withdrew free API access **for everyone**,
+and said so directly:
 
-**The root cause was not reading the documentation.** airplanes.live publishes
-its limit plainly — 1 request per second, at
-<https://airplanes.live/api-guide/> — and it was never consulted. Instead the
-limit was "discovered" empirically: several hundred requests in an evening
-across a coverage probe, three characterisation runs and repeated live tests,
-all from one address, escalating after each refusal.
+> Due to bot abuse and Claude code, the free API has been taken down in order to
+> prevent our eventual bankruptcy. […] The Airplanes.Live API serves over 2
+> billion requests a week and growing. We exceeded monthly hosting egress
+> bandwidth in 4 days this month.
 
-Two things follow from that, and both are worse than the wasted effort:
+They cite hosting costs up roughly 300% in eighteen months. Access now expects a
+feeder plus sponsorship (25 or 50 USD/month), after which they will clear a
+static IP or user-agent.
 
-1. **The whole exercise was unnecessary.** The number was a documented fact,
-   one page fetch away.
-2. **The measurements were wrong.** The recorded conclusion was that "2 s trips
-   both providers" and "5 s is the safe rate". Neither is true as a general
-   fact. Those runs were measuring a state this project had itself degraded —
-   an accumulating penalty and then an outright block — not the providers'
-   steady-state behaviour. The documented limit is five times *faster* than
-   what was concluded. Empirical numbers gathered while provoking a service
-   describe the provocation, not the service.
+So this project's requests were not the cause of its own 403 — but they were an
+instance of exactly the behaviour that caused the shutdown, at small scale. The
+lesson stands and is not softened by the volume being negligible in aggregate:
+a free community service run on donated receivers is not a resource to
+characterise empirically.
 
-Consequences and handling:
-
-1. **Clearing it needs a human**, at `contact@airplanes.live`. Waiting will not
-   fix it.
-2. **The production server has a different IP** and is very unlikely to be
-   affected. At the shipped 5 s interval it will not repeat this.
-3. **The application degrades rather than fails** — adsb.lol carries the fleet
-   alone. This is the redundancy in §1 doing its job, and is the second time
-   during development that one provider covered for the other.
-
-Two code changes came out of it:
-
-- **403/401 is distinguished from 429.** A block does not clear on a two-minute
-  timer, so it jumps straight to a 15 minute `blockedBackoff` and logs a
-  distinct, actionable message once — rather than repeating `http 403` every
-  half-minute, which reads like an ordinary rate limit.
-- **The response body is captured** (truncated) into the error. `http 403`
-  alone gave no hint that this was a block rather than a limit; the body said
-  so plainly and was being discarded.
-
-**If a provider's limit is ever in question again:** read their documentation
-first, and treat what it says as the answer. If it is genuinely undocumented,
-pick a conservative rate and let the backoff adapt — do not go looking for the
-ceiling. The first refusal is a stop signal, not a data point.
+**Read the documentation first. Treat the first refusal as the answer. Budget
+the session, not just the rate.** These are now standing rules, not observations.
 
 ### Licensing and permitted use
 
@@ -304,7 +290,7 @@ Surveyed 2026-08-13, with the verdict for **personal, non-commercial** use:
 | Provider | Personal use | Documented limit | Notes |
 |---|---|---|---|
 | **adsb.fi** | **Yes** | 1 req/s | *"for personal, non-commercial use only"* — exactly this case. Explicitly *"compatible with the ADSBexchange v2 API"*, so it shares our schema. Uses `/icao/` for a comma-separated list. |
-| **airplanes.live** | **Yes** | 1 req/s | Commercial use needs a separate arrangement ([their page](https://airplanes.live/commercial-use/) says only "contact@airplanes.live"); personal use is the ordinary case. Currently blocking this IP — see the incident below. |
+| ~~airplanes.live~~ | **Withdrawn** | — | The free API was taken down for everyone in August 2026: bot and AI-agent abuse against 2 billion requests a week, hosting costs up ~300% in 18 months, a month's egress spent in four days. Access now expects a feeder **and** sponsorship (25/50 USD a month), after which they clear a static IP or user-agent. |
 | **adsb.lol** | Presumed | "dynamic based on the environment load" | No licence or permitted-use statement found anywhere on their site or README. Silence is not permission, but nothing prohibits personal use either. The README warns: *"In the future, you will require an API key which you can obtain by feeding adsb.lol."* |
 | ADSBexchange | Yes, paid | per plan | Community API is *"for personal and non-commercial use"*, low-cost rather than free. |
 | **OpenSky** | **No** | 400–14,400 credits/day by tier | The commercial clause stops mattering, but a second one does not: *"Use of the REST API in any operational capacity — including integration into a live product, service, or automated system (even if only internal) — requires a previous written agreement, even for non-profit or governmental entities."* A polling tracker is exactly that. Their licence also grants use *"solely for the purpose of non-profit research and non-profit education"*, which hobby tracking is not. |
@@ -318,15 +304,20 @@ An earlier version of this document asserted adsb.lol data was ODbL. That was
 not verified and has been removed; the licence should be confirmed with them
 rather than assumed.
 
-We poll **adsb.lol, airplanes.live and adsb.fi**, all three, staggered. They
+We poll **adsb.lol and adsb.fi**, staggered. They
 share a schema, so a third source costs one line and buys a third independent
 receiver network — which is the only real defence against both the coverage
 gaps in §13 and a single provider going dark.
 
+**The direction of travel is one way.** airplanes.live has withdrawn free
+access; adsb.lol's README says an API key obtained by *feeding them* will be
+required in future; adsb.fi is personal-use only. Free, anonymous, unlimited
+ADS-B APIs are ending, and the reason is the load that automated clients put on
+services run by hobbyists on donated hardware.
+
 **Actions outstanding:**
 
-1. Email `contact@airplanes.live` to clear the IP block recorded below.
-2. **Consider feeding.** A receiver would give unmetered local data with no
+1. **Consider feeding.** A receiver would give unmetered local data with no
    rate limit at all, unlock feeder tiers (ADSBexchange grants feeders API
    access; adsb.lol intends to), and improve coverage exactly where you are —
    addressing the roadmap risk and §13's coverage limitation together.
