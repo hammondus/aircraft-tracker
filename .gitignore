@@ -12,3 +12,6 @@
 
 # Contains the PBKDF2 password hash
 /config.json
+
+# Server-side history bind mount (see compose.yml)
+/history/

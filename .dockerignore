@@ -1,0 +1,15 @@
+# The 1 GB tile archive is a mount, never part of the image.
+tiles/
+
+# Local state and secrets.
+config.json
+history.db
+history.db-wal
+history.db-shm
+history/
+
+# Build output.
+aircraft-tracker
+dist/
+
+.git/

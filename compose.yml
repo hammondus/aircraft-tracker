@@ -1,0 +1,28 @@
+# Deployment for a home server behind nginx proxy manager.
+#
+# Four things are mounted rather than baked in: the config (holds the password
+# hash), the fleet list (edited without rebuilding), the tile archive (a
+# gigabyte), and the history database (the accumulating point of the project).
+
+services:
+  tracker:
+    build: .
+    image: aircraft-tracker
+    container_name: aircraft-tracker
+    # The entire value of this project is continuous collection, so it must come
+    # back by itself after a crash, a reboot, or a power cut.
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./config.json:/data/config.json:ro
+      - ./fleet.json:/data/fleet.json:ro
+      - ./tiles:/data/tiles:ro
+      # Bind mount rather than a named volume: this file is the archive, and you
+      # want to be able to find it, copy it and back it up without docker.
+      - ./history:/data/history
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
