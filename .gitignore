@@ -5,8 +5,10 @@
 # Map tiles: ~1 GB, built with `make tiles`
 /tiles/
 
-# Recorded position history
-/history/
+# Recorded position history. Never pruned, so it only grows.
+/history.db
+/history.db-wal
+/history.db-shm
 
 # Contains the PBKDF2 password hash
 /config.json

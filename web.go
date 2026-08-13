@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	defaultSessionTTL = 7 * 24 * time.Hour
-	defaultTilesPath  = "tiles/australia.pmtiles"
+	defaultSessionTTL  = 7 * 24 * time.Hour
+	defaultTilesPath   = "tiles/australia.pmtiles"
+	defaultHistoryPath = "history.db"
 	// immutableCache is for URLs that name their own content. See
 	// DESIGN-DECISIONS.md §11.
 	immutableCache = "public, max-age=31536000, immutable"

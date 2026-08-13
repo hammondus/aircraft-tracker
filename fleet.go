@@ -119,6 +119,10 @@ type Config struct {
 	SessionTTL   duration `json:"session_ttl"`
 	// TilesPath is the Protomaps archive built by `make tiles`.
 	TilesPath string `json:"tiles_path"`
+	// HistoryPath is the SQLite position archive. Nothing is ever pruned; at
+	// this fleet size it grows by a few hundred MB a year. Use ":memory:" to
+	// record nothing.
+	HistoryPath string `json:"history_path"`
 }
 
 // vhToHex derives an ICAO 24-bit address from an Australian VH- registration.
@@ -214,6 +218,9 @@ func (c *Config) normalise() error {
 	}
 	if c.TilesPath == "" {
 		c.TilesPath = defaultTilesPath
+	}
+	if c.HistoryPath == "" {
+		c.HistoryPath = defaultHistoryPath
 	}
 	if c.IdleInterval.Duration <= 0 {
 		c.IdleInterval.Duration = defaultIdleInterval

@@ -386,36 +386,102 @@ well under a kilobyte. A delta protocol would add reconnection edge cases and
 client-side state reconciliation to save bandwidth that does not need saving.
 Revisit only if the fleet reaches a few hundred aircraft, which it will not.
 
-## 7. History: append-only JSONL
+## 7. History: SQLite, fixes as truth
 
-One file per UTC day, one JSON object per line, in `history/YYYY-MM-DD.jsonl`.
+Every position is recorded to a SQLite database (`history.db`) and **nothing is
+ever pruned**. The archive is the point of the project as much as the live map
+is.
 
-Chosen over SQLite because at this volume the query advantage does not pay for
-the dependency. Two aircraft flying a full day at one sample per five seconds
-is well under a megabyte a day; a year fits comfortably in a few hundred
-megabytes. The files are greppable, trivially backed up, survive a corrupted
-write with the loss of one line, and need no schema migration.
+### Why this reverses the original decision
 
-The writer sits behind a small interface so that if reporting requirements grow
-teeth — utilisation by aircraft, by month, across years — replaying the files
-into SQLite is an afternoon's work and loses nothing. `modernc.org/sqlite`
-would be the choice there: pure Go, so it still cross-compiles to linux/arm64
-without cgo.
+This document previously specified append-only JSONL, on the grounds that the
+query advantage of SQLite did not pay for the dependency. Three things changed:
 
-History is sampled at **one fix per 5 seconds**, not the full 1 Hz. Track
-replay does not benefit from finer resolution and it cuts storage fivefold.
+1. The fleet went from 2 aircraft to 13.
+2. History moved from "a bonus" to a primary goal.
+3. **A map replay UI was added to the scope.** That is the decisive one. It
+   needs *queries* — list flights for VH-XAQ in March, fetch that flight's
+   points. JSONL answers "grep one day" well and "scrub a timeline across three
+   years" terribly.
 
-### Flight segmentation
+### The dependency
 
-Raw position streams are nearly useless to query, so the writer segments them
-into flights: a flight closes after the aircraft has been on the ground, or out
-of contact, for more than 10 minutes.
+`modernc.org/sqlite`, the project's first and only Go dependency. Pure Go, so
+`CGO_ENABLED=0 GOOS=linux GOARCH=arm64` still produces a static binary —
+verified, not assumed. The cgo alternative (`mattn/go-sqlite3`) is leaner and
+faster but makes cross-compiling from macOS to the deploy target genuinely
+painful.
 
-**Known limitation:** a coverage gap and a completed flight look identical from
-the data. An aircraft that flies out of receiver range for 15 minutes will be
-recorded as having landed and then departed again. Flights are therefore
-labelled as inferred, and are not suitable as a source of truth for duty or
-maintenance records.
+The honest cost: **25 modules** pulled in, 14 of them modernc's own support
+packages, and roughly 6 MB on the binary. That is not small for a project that
+had none, and it is worth knowing rather than glossing.
+
+### No flights table
+
+Flights are **derived on query**, never stored.
+
+Segmentation is inferred, and a coverage gap is indistinguishable from a
+landing (§13). Materialising it would bake a guess into the only copy of the
+data, and changing the heuristic later would mean a migration and a rebuild.
+Deriving instead means the fixes stay the truth and the heuristic is free to
+improve.
+
+The measurement that settles it: with 5.26 million rows (a year of four
+aircraft flying five hours a day), an indexed month-long query for one aircraft
+returns **129,601 rows in 3 ms**. There is nothing to optimise. If that ever
+changes, cache it then.
+
+### Volume
+
+Measured, not estimated: **90 bytes per row**, so that same synthetic year is
+**452 MB**. Real usage will be well under that — most of these aircraft are no
+longer flown daily, if at all. Keeping everything forever costs nothing worth
+economising on.
+
+### The write path, and the trap in it
+
+An aircraft parked with its transponder powered reports the same position
+indefinitely. Recording every fix would fill the archive with thousands of
+identical rows a day per aircraft, and the bulk of the history would be
+aeroplanes doing nothing.
+
+A fix is stored when it is genuinely new **and** either:
+
+- it has moved at least **50 m**, or
+- **60 seconds** have passed since the last stored fix.
+
+Movement is captured finely, a stationary aircraft still leaves a heartbeat
+proving it was there, and nothing is written when nothing happens.
+
+Two more properties worth stating:
+
+- **`UNIQUE(hex, at)` with `INSERT OR IGNORE`.** Providers re-offer fixes and a
+  restart replays them; deduplication is therefore free and needs no bookkeeping
+  that could drift.
+- **A write failure never takes down the live display.** Losing history is bad;
+  losing the map because the disk filled would be worse. Failures are logged and
+  survived.
+
+WAL journalling, so the history UI can read while the recorder writes.
+`synchronous=NORMAL` trades a theoretical loss of the last few commits on power
+failure for far fewer fsyncs — the right trade for position history.
+
+### Segmentation
+
+A flight ends when the aircraft has been out of contact, **or on the ground**,
+for more than ten minutes. The second rule is not redundant: stationary aircraft
+still emit a heartbeat every minute, so a parked aeroplane leaves no gap to
+detect. Runs that never leave the ground are discarded, as are runs of fewer
+than five fixes.
+
+**Inferred flights are not records.** They are useful for finding your way
+around the archive and nothing more.
+
+### What history cannot do
+
+**It starts when the recorder does.** There is no backfill: nothing here can
+recover where VH-YJE flew in 2011. Some providers sell or publish historical
+archives, which would be a separate project with separate licensing.
 
 ## 8. Map: MapLibre GL JS + self-hosted Protomaps
 

@@ -67,6 +67,19 @@ func main() {
 		log.Printf("  idle during %s-%s: every %s", q.From, q.To, q.IdleInterval.Duration)
 	}
 
+	store, err := OpenStore(cfg.HistoryPath)
+	if err != nil {
+		log.Fatalf("history: %v", err)
+	}
+	defer store.Close()
+	if n, oldest, err := store.Stats(); err != nil {
+		log.Printf("history: %v", err)
+	} else if n == 0 {
+		log.Printf("  history %s (empty; recording starts now)", cfg.HistoryPath)
+	} else {
+		log.Printf("  history %s (%d fixes since %s)", cfg.HistoryPath, n, oldest.Format("2006-01-02"))
+	}
+
 	hub := NewHub()
 	logStates := stateLogger(*verbose)
 
@@ -74,6 +87,11 @@ func main() {
 	p.OnUpdate = func(states []State) {
 		hub.Broadcast(states)
 		logStates(states)
+		// Losing history is bad; taking the live display down with it would be
+		// worse, so a write failure is reported and otherwise survived.
+		if _, err := store.Record(states); err != nil {
+			log.Printf("history: %v", err)
+		}
 	}
 
 	web, err := newServer(cfg, hub, p)
