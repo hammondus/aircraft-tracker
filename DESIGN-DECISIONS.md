@@ -551,6 +551,16 @@ an unresolvable callsign returns an error saying so, rather than silently
 tracking nothing — "no contact" already means something specific here, and must
 not come to mean "you typed something I could not find".
 
+On the map they are drawn in **violet**, a hue deliberately far from the fleet's
+green and amber and from the history track's blue, so which family an aircraft
+belongs to is readable without a legend. They are bright rather than muted: you
+typed a registration in order to look at it, so it should be the easiest thing on
+the map to find. Only the brightness varies with freshness, never the hue, or a
+watched aircraft would be mistaken for one of yours.
+
+The panel carries the same violet, which is what makes the association
+learnable — the first time you add one, the colour teaches itself.
+
 Watched aircraft differ from the fleet in exactly two ways:
 
 - **Nothing is recorded.** The archive is for the aircraft you chose

@@ -78,6 +78,7 @@ function features(now) {
         rego: entry.rego,
         status: entry.status,
         reference: Boolean(entry.reference),
+        watched: Boolean(entry.watched),
         track: entry.fix.track_deg || 0,
         onGround: Boolean(entry.fix.on_ground),
       },
@@ -159,7 +160,7 @@ async function initMap() {
     filter: ["all", ["==", ["get", "status"], "stale"], ["!", ["get", "reference"]]],
     paint: {
       "circle-radius": 14,
-      "circle-color": "#fbbf24",
+      "circle-color": ["case", ["get", "watched"], "#c084fc", "#fbbf24"],
       "circle-opacity": 0.12,
     },
   });
@@ -177,11 +178,20 @@ async function initMap() {
     paint: {
       // Status must be legible at a glance: an aircraft nobody can hear cannot
       // look like one being tracked.
-      // Reference airliners get one muted colour whatever their status: they
-      // are scenery proving the feed works, and colouring them like the fleet
-      // would drown thirteen aircraft in eight.
+      // Three families, deliberately far apart in hue so which is which is
+      // readable without a legend:
+      //
+      //   fleet    green when live, amber when stale  -- yours
+      //   watched  violet                             -- added by hand, this session
+      //   reference muted grey                        -- scenery proving the feed works
+      //
+      // Watched aircraft are bright rather than muted: you typed a registration
+      // in order to look at it, so it should be the easiest thing on the map to
+      // find. Only its brightness varies with freshness, not its hue, or it
+      // would be mistaken for one of yours.
       "icon-color": [
         "case",
+        ["get", "watched"], "#c084fc",
         ["get", "reference"], "#64748b",
         ["match", ["get", "status"],
           "live", "#4ade80",
@@ -190,6 +200,7 @@ async function initMap() {
       ],
       "icon-opacity": [
         "case",
+        ["get", "watched"], ["match", ["get", "status"], "live", 1, "stale", 0.8, 0.5],
         ["get", "reference"], 0.5,
         ["match", ["get", "status"], "no_contact", 0.45, 1],
       ],
@@ -208,7 +219,12 @@ async function initMap() {
       "text-allow-overlap": true,
     },
     paint: {
-      "text-color": ["case", ["get", "reference"], "#8b98a8", "#dfe6ee"],
+      "text-color": [
+        "case",
+        ["get", "watched"], "#e9d5ff",
+        ["get", "reference"], "#8b98a8",
+        "#dfe6ee",
+      ],
       "text-halo-color": "#10141a",
       "text-halo-width": 1.5,
     },
@@ -320,7 +336,8 @@ function applySnapshot(states) {
     const isNew = !prev || !prev.fix || prev.fix.at !== s.fix?.at;
     fleet.set(s.hex, {
       rego: s.rego,
-      reference: Boolean(s.reference) || Boolean(s.watched),
+      reference: Boolean(s.reference),
+      watched: Boolean(s.watched),
       status: s.status,
       fix: s.fix ?? null,
       ageSec: s.age_sec ?? 0,

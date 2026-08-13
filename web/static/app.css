@@ -8,6 +8,9 @@
   --live: #4ade80;
   --stale: #fbbf24;
   --none: #64748b;
+  /* Aircraft added by hand for one session. Far enough from the fleet's green
+     and amber, and from the history track's blue, to be unmistakable. */
+  --watch: #c084fc;
   --error: #f87171;
 }
 
@@ -168,7 +171,7 @@ body[data-mode="live"] #history-pane { display: none; }
 /* Reference aircraft are airliners carried only as a liveness check. They must
    read as clearly not-yours, or a panel of amber Qantas jets looks like a fault
    in a fleet that is simply on the ground. */
-li[data-reference="true"], li[data-watched="true"] { opacity: 0.75; }
+li[data-reference="true"] { opacity: 0.75; }
 li[data-reference="true"] .rego::after,
 li[data-watched="true"] .rego::after {
   content: "ref";
@@ -187,7 +190,16 @@ li[data-reference="true"] .status { color: var(--dim) !important; }
 
 /* Must come after the shared rule above, or it is overridden by it -- equal
    specificity, so the later declaration wins. */
-li[data-watched="true"] .rego::after { content: "watching"; }
+li[data-watched="true"] .rego::after {
+  content: "watching";
+  color: var(--watch);
+  border-color: currentColor;
+}
+/* The panel row carries the same colour as the map icon, so "the violet one is
+   the aircraft I typed in" is learnable without a legend. */
+li[data-watched="true"] .rego { color: var(--watch); }
+li[data-watched="true"] .status { color: var(--watch) !important; opacity: 0.75; }
+#watching .rego { color: var(--watch); }
 
 #ref-note { border-top: 1px solid var(--line); padding-top: 0.6rem; margin-top: 0.5rem; }
 #fleet li:first-of-type[data-reference="true"] { margin-top: 0.4rem; }
