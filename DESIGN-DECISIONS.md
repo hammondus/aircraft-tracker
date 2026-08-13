@@ -4,13 +4,24 @@ Live map of a small set of aircraft, sourced from crowd-sourced ADS-B networks.
 A personal, non-commercial project, behind a password and not public. Live view
 is the primary goal; track history is a secondary one.
 
-Aircraft tracked at time of writing (change freely in `config.json` -- VH-
-registrations derive their ICAO address automatically, see §3):
+Aircraft tracked are listed in **`fleet.json`**, a plain JSON array kept
+separate from `config.json` and committed to the repository.
 
-| Rego | ICAO hex | Type | |
-|---|---|---|---|
-| VH-YSO | `7C7C16` | Beech 1900C-1 | B190 |
-| VH-TAV | `7C6045` | Vulcanair P.68C | P68 |
+That split is deliberate. `config.json` holds the password hash and can never
+be committed, but the aircraft list is hand-curated, grows over time, and is
+exactly the part worth having history for. Leaving it inside a gitignored file
+would lose the only interesting configuration in the project.
+
+Adding an aircraft is one line:
+
+```json
+{ "rego": "VH-ABC", "type": "C172", "desc": "Cessna 172" }
+```
+
+No hex needed — three-letter VH- registrations derive their ICAO address
+arithmetically (§3). `type` and `desc` are cosmetic; look them up once at
+<https://api.adsbdb.com/v0/aircraft/VH-ABC> if you want them accurate. Anything
+that is not a three-letter VH- registration needs an explicit `"hex"`.
 
 ---
 
@@ -308,8 +319,10 @@ Australian VH- registrations map algorithmically onto ICAO 24-bit addresses:
 hex = 0x7C0000 + (L1 * 1296) + (L2 * 36) + L3     where A=0 … Z=25
 ```
 
-Verified against five aircraft (VH-BYG, VH-YID, VH-PVQ observed live;
-VH-YSO, VH-TAV confirmed against adsbdb.com).
+Verified against 16 aircraft: VH-BYG, VH-YID and VH-PVQ observed live from the
+providers, and all 13 in `fleet.json` cross-checked against adsbdb.com. Every
+one an exact match, which is about as much confidence as an undocumented
+allocation scheme can earn.
 
 This matters because `/v2/registration/{reg}` is a **live** query — it only
 answers while the aircraft is airborne and being received. Deriving the hex

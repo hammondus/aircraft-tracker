@@ -113,3 +113,98 @@ func TestExampleConfigDoesNotPinIntervals(t *testing.T) {
 			c.PollInterval.Duration, defaultPollInterval)
 	}
 }
+
+// The fleet lives in its own file so it can be version-controlled: config.json
+// holds the password hash and can never be committed, but the aircraft list is
+// hand-curated, grows over time, and is exactly the part worth keeping.
+func TestFleetFileIsLoaded(t *testing.T) {
+	dir := t.TempDir()
+	fleet := filepath.Join(dir, "fleet.json")
+	if err := os.WriteFile(fleet, []byte(`[
+		{"rego": "VH-YSO", "type": "B190", "desc": "Beech 1900C-1"},
+		{"rego": "VH-WAM", "type": "AC50"}
+	]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"fleet_file": "fleet.json"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Fleet) != 2 {
+		t.Fatalf("got %d aircraft, want 2", len(c.Fleet))
+	}
+	// Hexes still derive, exactly as for an inline fleet.
+	if c.Fleet[0].Hex != "7c7c16" || c.Fleet[1].Hex != "7c6f6c" {
+		t.Errorf("hexes not derived: %+v", c.Fleet)
+	}
+	if c.Fleet[0].Desc != "Beech 1900C-1" {
+		t.Errorf("desc lost: %+v", c.Fleet[0])
+	}
+}
+
+func TestFleetFileRejects(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("good.json", `[{"rego":"VH-YSO"}]`)
+	// A typo'd key must fail loudly rather than silently produce a nameless
+	// aircraft, which is the same reasoning as DisallowUnknownFields on config.
+	write("typo.json", `[{"reg":"VH-YSO"}]`)
+	write("notarray.json", `{"rego":"VH-YSO"}`)
+	write("empty.json", `[]`)
+
+	for name, cfg := range map[string]string{
+		"missing file":     `{"fleet_file": "nope.json"}`,
+		"typo'd key":       `{"fleet_file": "typo.json"}`,
+		"object not array": `{"fleet_file": "notarray.json"}`,
+		"empty fleet":      `{"fleet_file": "empty.json"}`,
+		// Two sources of truth for the same list is a configuration bug.
+		"both fleet and fleet_file": `{"fleet_file": "good.json", "fleet": [{"rego":"VH-TAV"}]}`,
+	} {
+		p := write("cfg.json", cfg)
+		if _, err := LoadConfig(p); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+// The committed fleet must actually load, and every registration in it must
+// resolve to a distinct aircraft.
+func TestShippedFleetFileIsValid(t *testing.T) {
+	b, err := os.ReadFile("fleet.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var members []Member
+	if err := json.Unmarshal(b, &members); err != nil {
+		t.Fatal(err)
+	}
+	if len(members) == 0 {
+		t.Fatal("fleet.json is empty")
+	}
+	seen := map[string]string{}
+	for _, m := range members {
+		hex, err := vhToHex(m.Rego)
+		if err != nil {
+			t.Errorf("%s: %v", m.Rego, err)
+			continue
+		}
+		if prev, dup := seen[hex]; dup {
+			t.Errorf("%s and %s both resolve to %s", prev, m.Rego, hex)
+		}
+		seen[hex] = m.Rego
+		if m.Type == "" {
+			t.Errorf("%s has no type", m.Rego)
+		}
+	}
+}

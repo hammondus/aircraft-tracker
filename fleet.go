@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -99,7 +100,17 @@ type Config struct {
 	// "0s" to disable the window.
 	QuietHours QuietHours `json:"quiet_hours"`
 	Providers  []Provider `json:"providers"`
-	Fleet      []Member   `json:"fleet"`
+	// Fleet lists the aircraft to track, inline. Fine for one or two.
+	Fleet []Member `json:"fleet"`
+	// FleetFile is a path to a JSON array of the same objects, resolved relative
+	// to the config file, and mutually exclusive with Fleet.
+	//
+	// Worth the extra concept because the two have opposite handling: the fleet
+	// is hand-curated, grows over time and deserves version history, whereas
+	// config.json can never be committed since it holds the password hash.
+	// Keeping the list hostage to a gitignored file would lose exactly the part
+	// worth keeping.
+	FleetFile string `json:"fleet_file"`
 
 	// PasswordHash is the shared login password, encoded by `-hashpw`. Empty
 	// disables authentication, which is refused unless -insecure is also given
@@ -115,8 +126,9 @@ type Config struct {
 //
 //	hex = 0x7C0000 + L1*1296 + L2*36 + L3      (A=0 … Z=25)
 //
-// Verified against VH-BYG/7c0876, VH-YID/7c7aa3, VH-PVQ/7c4ef4, VH-YSO/7c7c16
-// and VH-TAV/7c6045.
+// Verified against 16 aircraft: three observed live from the providers
+// (VH-BYG, VH-YID, VH-PVQ) and the 13 in fleet.json cross-checked against
+// adsbdb.com. Every one an exact match.
 //
 // This matters because the providers' /registration/ endpoint is a *live*
 // query -- it only answers while the aircraft is airborne and being received.
@@ -152,10 +164,39 @@ func LoadConfig(path string) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	if err := c.loadFleetFile(path); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	if err := c.normalise(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &c, nil
+}
+
+// loadFleetFile resolves and reads FleetFile, if set. Done here rather than in
+// normalise because only LoadConfig knows the config's own path, which the
+// fleet path is relative to.
+func (c *Config) loadFleetFile(configPath string) error {
+	if c.FleetFile == "" {
+		return nil
+	}
+	if len(c.Fleet) > 0 {
+		return fmt.Errorf("both fleet and fleet_file are set; use one or the other")
+	}
+	p := c.FleetFile
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(filepath.Dir(configPath), p)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return fmt.Errorf("fleet_file: %w", err)
+	}
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields() // "reg" instead of "rego" should not silently vanish
+	if err := dec.Decode(&c.Fleet); err != nil {
+		return fmt.Errorf("%s: %w", p, err)
+	}
+	return nil
 }
 
 func (c *Config) normalise() error {
