@@ -12,6 +12,9 @@ services:
     # The entire value of this project is continuous collection, so it must come
     # back by itself after a crash, a reboot, or a power cut.
     restart: unless-stopped
+    # Optional once nginx proxy manager reaches the container over the shared
+    # network below. Kept because being able to curl it from the host is worth
+    # a great deal when something is wrong, and the app requires a login anyway.
     ports:
       - "8099:8099"
     volumes:
@@ -26,3 +29,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Both are listed on purpose: naming any network here replaces the implicit
+    # default, which is the sort of thing that is obvious once and baffling
+    # later.
+    networks:
+      - default
+      - blobbyboo
+
+networks:
+  # The network nginx proxy manager already runs on. Joining it lets NPM forward
+  # to the hostname "aircraft-tracker" on port 8099, rather than to a docker
+  # bridge IP that changes, or to "localhost" -- which inside the NPM container
+  # means NPM itself, and is the usual cause of a 502 here.
+  blobbyboo:
+    external: true

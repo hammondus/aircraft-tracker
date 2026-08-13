@@ -127,10 +127,27 @@ default lands beside the working directory, which inside the container is `/data
 — part of the image rather than the mounted volume, so the recorder cannot write
 there and exits into a restart loop.
 
-Then point nginx proxy manager at port 8099. The app sets
-`X-Accel-Buffering: no` on the event stream, so SSE works without touching the
-proxy config — but if events arrive in bursts rather than steadily, set
-`proxy_buffering off` on that location.
+### Behind nginx proxy manager
+
+If NPM runs in Docker too, point it at the container by **name**, not at
+`localhost` — inside the NPM container that means NPM itself, which is the usual
+cause of a 502.
+
+Find the network NPM is on and join it:
+
+```sh
+docker inspect <npm-container> \
+  --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+```
+
+Put that name in the `networks:` block at the bottom of `compose.yml` (it ships
+with `blobbyboo`, which is almost certainly not yours), then in NPM set
+**Forward Hostname** to `aircraft-tracker` and **Forward Port** to `8099`.
+
+Leave **Websockets Support** off — the live feed is Server-Sent Events, which is
+plain HTTP. The app sets `X-Accel-Buffering: no` so SSE is not buffered; if
+positions still arrive in bursts rather than steadily, add `proxy_buffering off`
+in the proxy host's Advanced tab.
 
 `make deploy` pulls and rebuilds on the server; `make logs` follows the output.
 
