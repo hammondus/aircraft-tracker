@@ -42,6 +42,10 @@ type Member struct {
 	//   - History. Recording airline traffic would add gigabytes a year of
 	//     tracks nobody asked for and bury the aircraft that matter.
 	Reference bool `json:"reference,omitempty"`
+	// Watched marks an aircraft added at runtime rather than configured. Set by
+	// the poller, never read from a file -- it exists so the UI can show these
+	// separately and offer to stop.
+	Watched bool `json:"watched,omitempty"`
 }
 
 // duration lets the config file say "1s" instead of a nanosecond count.

@@ -119,8 +119,10 @@ func (s *Store) Record(states []State) (int, error) {
 		if st.Fix == nil || st.Status == StatusNoContact {
 			continue
 		}
-		if st.Reference {
-			continue // liveness check, not history worth keeping
+		if st.Reference || st.Watched {
+			// Reference aircraft are a liveness check; watched ones are a
+			// passing curiosity. Neither is history worth keeping.
+			continue
 		}
 		prev, ok := s.last[st.Hex]
 		var prevp *Fix

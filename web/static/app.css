@@ -168,8 +168,9 @@ body[data-mode="live"] #history-pane { display: none; }
 /* Reference aircraft are airliners carried only as a liveness check. They must
    read as clearly not-yours, or a panel of amber Qantas jets looks like a fault
    in a fleet that is simply on the ground. */
-li[data-reference="true"] { opacity: 0.62; }
-li[data-reference="true"] .rego::after {
+li[data-reference="true"], li[data-watched="true"] { opacity: 0.75; }
+li[data-reference="true"] .rego::after,
+li[data-watched="true"] .rego::after {
   content: "ref";
   margin-left: 0.4rem;
   font-size: 0.62rem;
@@ -184,5 +185,37 @@ li[data-reference="true"] .rego::after {
    for them and must not be coloured like a warning. */
 li[data-reference="true"] .status { color: var(--dim) !important; }
 
+/* Must come after the shared rule above, or it is overridden by it -- equal
+   specificity, so the later declaration wins. */
+li[data-watched="true"] .rego::after { content: "watching"; }
+
 #ref-note { border-top: 1px solid var(--line); padding-top: 0.6rem; margin-top: 0.5rem; }
 #fleet li:first-of-type[data-reference="true"] { margin-top: 0.4rem; }
+
+/* Watched aircraft are added by hand for one session, so the control to add and
+   drop them belongs beside the fleet rather than in a settings page. */
+#watch-form { display: flex; gap: 0.4rem; padding: 0.5rem 0.6rem 0.2rem; }
+#watch-input {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.55rem;
+  font: inherit; font-size: 0.82rem;
+}
+#watch-input:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
+#watch-form button {
+  flex: none; width: 2rem; background: none; border: 1px solid var(--line);
+  border-radius: 6px; color: var(--dim); font: inherit; font-size: 1rem; cursor: pointer;
+}
+#watch-form button:hover { color: var(--text); border-color: var(--live); }
+#watch-note { margin-top: 0.2rem; }
+#watch-note[data-error="true"] { color: var(--error); }
+
+#watching { list-style: none; margin: 0; padding: 0 0.4rem; }
+#watching li { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.7rem; }
+#watching .rego { font-weight: 600; font-size: 0.86rem; }
+#watching .what { color: var(--dim); font-size: 0.78rem; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#watching button {
+  flex: none; background: none; border: 0; color: var(--dim); cursor: pointer;
+  font: inherit; font-size: 1rem; line-height: 1; padding: 0 0.2rem;
+}
+#watching button:hover { color: var(--error); }

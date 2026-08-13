@@ -227,6 +227,9 @@ func (s *server) routes() http.Handler {
 	mux.Handle("GET /tiles/{token}/{name}", s.requireAuth(s.tiles.handler()))
 	mux.Handle("GET /api/flights", s.requireAuth(http.HandlerFunc(s.handleFlights)))
 	mux.Handle("GET /api/track", s.requireAuth(http.HandlerFunc(s.handleTrack)))
+	mux.Handle("GET /api/watch", s.requireAuth(http.HandlerFunc(s.handleWatchList)))
+	mux.Handle("POST /api/watch", s.requireAuth(http.HandlerFunc(s.handleWatchAdd)))
+	mux.Handle("DELETE /api/watch", s.requireAuth(http.HandlerFunc(s.handleWatchRemove)))
 
 	return securityHeaders(cacheDefaults(mux))
 }

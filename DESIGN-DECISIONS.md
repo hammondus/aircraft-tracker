@@ -537,6 +537,39 @@ nothing, which is a baffling result. The inverted-range check runs *before* that
 widening, because doing it after turns a backwards range into a valid
 zero-length one and the mistake passes silently. A test caught exactly that.
 
+## 7a. Watching an aircraft for one session
+
+Type a registration, an ICAO hex address, or the callsign of a flight that is
+currently airborne, and it is tracked for as long as the process runs. Nothing
+about it is written to `fleet.json`, and nothing about it is recorded.
+
+Whatever is typed is **resolved to a hex once, at the moment it is added**, and
+tracked by hex from then on. A registration converts arithmetically and needs no
+network at all; a callsign has to be looked up, because the mapping from flight
+number to airframe only exists while the flight is in the air. That is also why
+an unresolvable callsign returns an error saying so, rather than silently
+tracking nothing — "no contact" already means something specific here, and must
+not come to mean "you typed something I could not find".
+
+Watched aircraft differ from the fleet in exactly two ways:
+
+- **Nothing is recorded.** The archive is for the aircraft you chose
+  deliberately, not for whatever you glanced at on a Tuesday.
+- **They vanish on restart.** They are held in memory only.
+
+They deliberately *do* count toward activity, unlike reference aircraft: you
+added one in order to watch it, so being told about it two minutes later defeats
+the point. An airliner carried permanently would pin the poller at its fast rate
+forever, which is why the two behave differently.
+
+The list is capped at 20. This is for glancing at an aircraft, not assembling a
+second fleet, and every entry lengthens the provider query.
+
+Watches are held per *server*, not per browser session, and so are shared
+between tabs and devices. For a single-user tool that is simpler and arguably
+more useful than isolating them; it would need revisiting if this were ever
+shared.
+
 ### What history cannot do
 
 **It starts when the recorder does.** There is no backfill: nothing here can
@@ -793,13 +826,12 @@ Recorded so nobody has to rediscover them:
    zero result as *provider unhealthy* rather than *nothing flying*, so the UI
    can say so.
 
-   **Partially addressed by reference aircraft.** `fleet.json` carries a
-   handful of Qantas airframes marked `"reference": true`. Airliners in daily
-   service are essentially always airborne somewhere, so if they are showing
-   and yours are not, your aircraft really are on the ground; if *nothing* is
-   showing, the fault is at this end. That distinction is the whole point,
-   because thirteen rarely-flown aeroplanes reading "no contact" otherwise looks
-   identical to a dead application.
+   **Addressed on demand rather than permanently.** Type any airliner's
+   callsign into the watch box (§7a) and it appears within one poll if the feed
+   is healthy. Permanent reference aircraft were tried first and removed: they
+   answered the same question but cluttered a curated fleet with airframes
+   nobody had flown. The `"reference": true` flag remains supported for anyone
+   who wants a standing canary.
 
    They are excluded from two things on purpose:
 

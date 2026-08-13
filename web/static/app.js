@@ -310,7 +310,8 @@ function keepInView(map, lonLat) {
 function applySnapshot(states) {
   const now = Date.now();
   for (const s of states) {
-    const li = listItems.get(s.hex);
+    // Watched aircraft have no server-rendered row, so make one on first sight.
+    const li = s.watched ? ensureRow(s) : listItems.get(s.hex);
     if (!li) continue; // fleet changed under a stale tab
 
     const prev = fleet.get(s.hex);
@@ -319,7 +320,7 @@ function applySnapshot(states) {
     const isNew = !prev || !prev.fix || prev.fix.at !== s.fix?.at;
     fleet.set(s.hex, {
       rego: s.rego,
-      reference: Boolean(s.reference),
+      reference: Boolean(s.reference) || Boolean(s.watched),
       status: s.status,
       fix: s.fix ?? null,
       ageSec: s.age_sec ?? 0,
@@ -589,3 +590,99 @@ playButton.addEventListener("click", () => {
 function signOut() {
   location.href = "/login?next=" + encodeURIComponent(location.pathname);
 }
+
+// ================================================================== watching
+//
+// Aircraft added by hand for this session only. They are tracked exactly like
+// the fleet -- live, stale, dead-reckoned -- and drive the fast poll rate,
+// because you added one in order to watch it. Nothing about them is recorded.
+
+const watchForm = document.getElementById("watch-form");
+const watchInput = document.getElementById("watch-input");
+const watchNote = document.getElementById("watch-note");
+const watchList = document.getElementById("watching");
+
+function say(msg, isError) {
+  watchNote.hidden = !msg;
+  watchNote.textContent = msg || "";
+  watchNote.dataset.error = String(Boolean(isError));
+}
+
+function renderWatched(list) {
+  watchList.replaceChildren();
+  for (const m of list) {
+    const li = document.createElement("li");
+    const rego = document.createElement("span");
+    rego.className = "rego";
+    rego.textContent = m.rego || m.hex;
+    const what = document.createElement("span");
+    what.className = "what";
+    what.textContent = [m.type, m.desc].filter(Boolean).join(" · ");
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.textContent = "×";
+    drop.setAttribute("aria-label", `Stop tracking ${m.rego || m.hex}`);
+    drop.addEventListener("click", () => unwatch(m.hex));
+    li.append(rego, what, drop);
+    watchList.append(li);
+  }
+}
+
+async function unwatch(hex) {
+  const r = await fetch(`/api/watch?hex=${encodeURIComponent(hex)}`, { method: "DELETE" });
+  if (r.status === 401) return signOut();
+  if (r.ok) {
+    renderWatched((await r.json()).watching || []);
+    // Drop it from the map immediately rather than leaving a ghost until the
+    // next broadcast.
+    fleet.delete(hex);
+    listItems.get(hex)?.remove();
+    listItems.delete(hex);
+  }
+}
+
+watchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const query = watchInput.value.trim();
+  if (!query) return;
+  say("Looking…", false);
+  try {
+    const r = await fetch("/api/watch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    if (r.status === 401) return signOut();
+    if (!r.ok) return say((await r.text()).trim(), true);
+    const data = await r.json();
+    renderWatched(data.watching || []);
+    watchInput.value = "";
+    say(`Tracking ${data.added?.rego || query} for this session.`, false);
+  } catch (err) {
+    say(String(err.message || err), true);
+  }
+});
+
+// Watched aircraft arrive in the same snapshot as the fleet, but have no row in
+// the server-rendered list, so build one the first time each appears.
+function ensureRow(s) {
+  if (listItems.has(s.hex)) return listItems.get(s.hex);
+  const li = document.createElement("li");
+  li.dataset.hex = s.hex;
+  li.dataset.watched = "true";
+  li.innerHTML =
+    `<button type="button" class="row">` +
+    `<span class="rego"></span><span class="type"></span>` +
+    `<span class="status"></span><span class="detail"></span></button>`;
+  li.querySelector(".rego").textContent = s.rego || s.hex;
+  li.querySelector(".type").textContent = s.type || "";
+  li.querySelector(".row").addEventListener("click", () => selectAircraft(s.hex, map));
+  document.getElementById("fleet").append(li);
+  listItems.set(s.hex, li);
+  return li;
+}
+
+fetch("/api/watch")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => d && renderWatched(d.watching || []))
+  .catch(() => {});

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -115,7 +116,6 @@ func (s *source) noteSuccess() int {
 type Poller struct {
 	client       *http.Client
 	members      []Member
-	hexes        string // precomputed comma-separated list
 	sources      []*source
 	broadcast    time.Duration
 	idleInterval time.Duration
@@ -128,6 +128,12 @@ type Poller struct {
 
 	mu     sync.RWMutex
 	latest map[string]Fix
+	// watch holds aircraft added at runtime, kept only in memory and lost on
+	// restart. They are tracked exactly like the fleet -- including driving the
+	// fast poll rate, because you added one in order to watch it -- but never
+	// recorded. History is for the aircraft you chose deliberately, not for
+	// whatever you glanced at on a Tuesday.
+	watch map[string]Member
 
 	// OnUpdate fires on the broadcast ticker with a fresh snapshot. It drives
 	// the SSE fan-out and the history writer.
@@ -148,13 +154,9 @@ func NewPoller(c *Config) *Poller {
 		srcs[i] = &source{Provider: p, interval: iv}
 	}
 	return &Poller{
-		client:  &http.Client{Timeout: requestTimeout},
-		members: c.Fleet,
-		// One request covers the whole fleet, and hex queries are not
-		// geographically constrained -- verified with a single request that
-		// returned aircraft near Sydney and Melbourne together. This is why
-		// there is no viewport tracking or circle stitching anywhere here.
-		hexes:        strings.Join(hx, ","),
+		client:       &http.Client{Timeout: requestTimeout},
+		members:      c.Fleet,
+		watch:        map[string]Member{},
 		sources:      srcs,
 		broadcast:    c.BroadcastInterval.Duration,
 		idleInterval: c.IdleInterval.Duration,
@@ -170,9 +172,73 @@ func NewPoller(c *Config) *Poller {
 // is a strong signal of an imminent departure, which is exactly when the fast
 // rate earns its keep -- and the cost of being wrong is polling a free API well
 // inside its documented limit.
+// hexes is the comma-separated list to ask providers for: the fleet plus
+// anything being watched.
+//
+// One request covers all of them, and hex queries are not geographically
+// constrained -- verified with a single request that returned aircraft near
+// Sydney and Melbourne together. That is why there is no viewport tracking or
+// circle stitching anywhere here, and why adding a watch costs nothing.
+func (p *Poller) hexes() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]string, 0, len(p.members)+len(p.watch))
+	for _, m := range p.members {
+		out = append(out, m.Hex)
+	}
+	for hex := range p.watch {
+		out = append(out, hex)
+	}
+	return strings.Join(out, ",")
+}
+
+// Watch starts tracking an aircraft for this run only.
+func (p *Poller) Watch(m Member) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.watch[m.Hex] = m
+}
+
+// Unwatch stops tracking one, and forgets its last position so it disappears
+// rather than lingering as a ghost.
+func (p *Poller) Unwatch(hex string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.watch, hex)
+	delete(p.latest, hex)
+}
+
+// Watched lists the runtime aircraft, sorted so the UI does not reshuffle.
+func (p *Poller) Watched() []Member {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]Member, 0, len(p.watch))
+	for _, m := range p.watch {
+		m.Watched = true
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Rego < out[j].Rego })
+	return out
+}
+
+func (p *Poller) watching(hex string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.watch[hex]
+	return ok
+}
+
 func (p *Poller) active(now time.Time) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	// A watched aircraft counts: you added it in order to watch it, so being
+	// told about it two minutes late defeats the point. Reference aircraft do
+	// not, because an airliner is always flying somewhere.
+	for hex := range p.watch {
+		if f, ok := p.latest[hex]; ok && now.Sub(f.At) <= p.idleTimeout {
+			return true
+		}
+	}
 	for _, m := range p.members {
 		if m.Reference {
 			continue // an airliner is always flying somewhere; it proves nothing
@@ -266,7 +332,7 @@ func (p *Poller) runSource(ctx context.Context, s *source, offset time.Duration)
 		wait := p.waitFor(s, time.Now())
 
 		reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		fixes, err := s.poll(reqCtx, p.client, p.hexes)
+		fixes, err := s.poll(reqCtx, p.client, p.hexes())
 		cancel()
 
 		switch {
@@ -389,8 +455,15 @@ func (p *Poller) snapshotAt(now time.Time) []State {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	out := make([]State, 0, len(p.members))
-	for _, m := range p.members {
+	all := make([]Member, 0, len(p.members)+len(p.watch))
+	all = append(all, p.members...)
+	for _, m := range p.watch {
+		m.Watched = true
+		all = append(all, m)
+	}
+
+	out := make([]State, 0, len(all))
+	for _, m := range all {
 		s := State{Member: m, Status: StatusNoContact}
 		if f, ok := p.latest[m.Hex]; ok {
 			age := now.Sub(f.At)

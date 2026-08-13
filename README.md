@@ -21,6 +21,8 @@ be wrong, is in [DESIGN-DECISIONS.md](DESIGN-DECISIONS.md).
   nobody can hear must not look like one parked on a taxiway.
 - Records every position to SQLite, forever, and replays any flight on the same
   map.
+- Tracks anything else on demand — type a registration, hex, or the callsign of
+  an airborne flight — for that session only, with nothing recorded.
 
 ## Configuration
 

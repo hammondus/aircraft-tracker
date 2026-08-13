@@ -40,10 +40,14 @@
       </li>
       {{end}}
     </ul>
-    <p class="hint" id="ref-note">
-      Reference aircraft below are airliners, not yours. They are here to prove
-      the feed is working: if they are blank too, the problem is this end.
-    </p>
+    <form id="watch-form" autocomplete="off">
+      <label class="sr" for="watch-input">Track an aircraft</label>
+      <input id="watch-input" type="text" placeholder="Track VH-OQA, QFA1 or a hex…"
+             spellcheck="false">
+      <button type="submit" aria-label="Track">+</button>
+    </form>
+    <p id="watch-note" class="hint" hidden></p>
+    <ul id="watching"></ul>
   </section>
 
   <section id="history-pane" hidden>
