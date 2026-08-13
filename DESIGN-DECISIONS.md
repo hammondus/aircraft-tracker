@@ -1,10 +1,11 @@
 # Design Decisions
 
-Live map of the Southern Airlines fleet, sourced from crowd-sourced ADS-B
-networks. Internal tool, not public. Live view is the primary goal; track
-history is a secondary one.
+Live map of a small set of aircraft, sourced from crowd-sourced ADS-B networks.
+A personal, non-commercial project, behind a password and not public. Live view
+is the primary goal; track history is a secondary one.
 
-Fleet at time of writing:
+Aircraft tracked at time of writing (change freely in `config.json` -- VH-
+registrations derive their ICAO address automatically, see §3):
 
 | Rego | ICAO hex | Type | |
 |---|---|---|---|
@@ -13,32 +14,33 @@ Fleet at time of writing:
 
 ---
 
-## 1. Data sources: adsb.lol + airplanes.live, merged
+## 1. Data sources: three networks, merged
 
-Both are free, keyless, and serve the same JSON schema (both derive from
-readsb/tar1090's `aircraft.json`), so supporting both costs one extra URL and a
-merge function.
+**adsb.lol, airplanes.live and adsb.fi.** All three are free, keyless, and
+serve the same JSON schema (all derive from readsb/tar1090's `aircraft.json`),
+so each additional source costs one URL and nothing else.
 
-We poll **both and take the freshest fix per aircraft** (lowest `seen_pos`).
-The dominant failure mode of this project is not knowing where an aircraft is
-because no volunteer receiver could hear it. The two networks have different
-feeder populations, so the union of their coverage is strictly better than
-either alone. At a two-aircraft fleet the cost of redundancy is negligible —
-one request per second to each, each well inside its own limit.
-
-`adsb.fi` (`https://opendata.adsb.fi/api/v2/`) serves the same schema and can
-be added as a third source by appending one line to the provider list.
+We poll **all three and take the freshest fix per aircraft**. The dominant
+failure mode of this project is not knowing where an aircraft is because no
+volunteer receiver could hear it, and each network has a different feeder
+population — so the union of their coverage is strictly better than any one.
+Redundancy is the whole design, and it has already paid for itself twice: once
+when airplanes.live blocked us, once when adsb.lol went dark.
 
 Rejected:
 
-- **OpenSky Network** — free tier is non-commercial only, and this is a
-  commercial operator. Also coarser (5–10s) and credit-limited.
-- **ADSBexchange** — commercial via RapidAPI unless you feed data. We have no
-  receivers.
+- **OpenSky Network** — not the commercial clause but the operational one:
+  *"Use of the REST API in any operational capacity — including … an automated
+  system (even if only internal) — requires a previous written agreement."* A
+  polling tracker is exactly that. Also coarser (5–10 s) and credit-limited.
+- **ADSBexchange** — its Community API is paid rather than free. Worth
+  revisiting if coverage proves inadequate; feeding also earns access.
+- **ADSBHub** — requires feeding a station to receive anything, and serves
+  TCP/SBS rather than REST.
 - **Running our own receiver** — would give unlimited 1 Hz data with no rate
   limit and would fill local coverage gaps, but only within line of sight of
-  wherever it is installed. Worth revisiting if it turns out the gaps cluster
-  around one base.
+  wherever it is installed. The single best upgrade available, and the one that
+  also unlocks feeder tiers elsewhere.
 
 ### Rate limits and poll scheduling
 
@@ -63,15 +65,16 @@ only correct strategy against a limit that is defined as variable.
 **We poll every 10 s per provider, ten times slower than airplanes.live
 permits.** That is a deliberate choice, not a measured constraint:
 
-- Two aircraft need nothing faster. Staggered across two providers this
-  refreshes fleet state every 5 s, and dead reckoning covers the gap.
+- A handful of aircraft need nothing faster. Staggered across three providers
+  this refreshes fleet state roughly every 3 s, and dead reckoning covers the
+  gap.
 - adsb.lol's limit is dynamic, so headroom is worth more than throughput.
 - These are free community services carrying our production dependency.
 
 ### Idle polling
 
-A two-aircraft fleet is on the ground for most of the day, and confirming that
-six times a minute spends a free service's capacity to learn nothing. Polling
+A small fleet is on the ground for most of the day, and confirming that six
+times a minute spends a free service's capacity to learn nothing. Polling
 rate therefore follows **fleet activity first, clock second**:
 
 | Fleet state | Time | Interval |
@@ -98,7 +101,8 @@ a situational-awareness display, not an oversight. If it ever matters, shorten
 `idle_interval`; the mechanism is already there.
 
 Coverage gaps longer than `idle_timeout` will drop an airborne aircraft back to
-idle mid-flight, which is a real scenario for VH-TAV at low level. The cost is
+idle mid-flight, which is a real scenario for a light aircraft at low level in
+poorly covered country. The cost is
 small: the aircraft has already been invisible for ten minutes at that point,
 and re-acquisition adds at most one idle interval.
 
@@ -130,17 +134,17 @@ staleness.
 
 This drove three choices:
 
-**Poll interval is per provider**, defaulting to 5 s, rather than one global
-rate. Both providers happen to need the same interval today, but they are free
-services whose limits can change independently, and one should not be punished
-for the other.
+**Poll interval is per provider**, defaulting to 10 s, rather than one global
+rate. All three happen to need the same interval today, but they are free
+services whose limits change independently, and one should not be punished for
+another.
 
-**Sources are staggered across the interval.** Two providers at 5 s, offset by
-2.5 s, refresh fleet state every 2.5 s while neither exceeds 0.2 req/s. A
+**Sources are staggered across the interval.** Three providers at 10 s, offset
+by 3.3 s, refresh fleet state about every 3 s while none exceeds 0.1 req/s. A
 conservative per-provider interval therefore does not mean conservative
 staleness — and client-side dead reckoning covers the remainder, since an
-airliner travels about 500 m in 2.5 s, which interpolates cleanly from ground
-speed and track.
+airliner travels roughly 700 m in that time, which interpolates cleanly from
+ground speed and track.
 
 **Client broadcast is decoupled from upstream polling.** A separate ticker emits
 snapshots to connected browsers at a steady rate regardless of what upstream
@@ -241,43 +245,44 @@ first, and treat what it says as the answer. If it is genuinely undocumented,
 pick a conservative rate and let the backoff adapt — do not go looking for the
 ceiling. The first refusal is a stop signal, not a data point.
 
-### Licensing and commercial use — UNRESOLVED
+### Licensing and permitted use
 
-**Southern Airlines is a for-profit operator, and this is an operational
-system. That makes commercial-use terms a gating question, not a footnote.**
-Attribution alone does not settle it. An attribution line is in the UI footer
-regardless.
+**This is a personal, non-commercial project.** That is not a detail: almost
+every ADS-B aggregator draws its line exactly there, and the same survey gives
+opposite answers depending on which side of it you sit. An attribution line is
+in the UI footer regardless.
 
-Surveyed 2026-08-13:
+Surveyed 2026-08-13, with the verdict for **personal, non-commercial** use:
 
-| Provider | Commercial use | Notes |
-|---|---|---|
-| **airplanes.live** | Contact required | Publishes a [commercial-use page](https://airplanes.live/commercial-use/) whose entire content is "Commercial Use Access — contact@airplanes.live — RapidAPI coming soon". No free commercial tier is documented. |
-| **adsb.lol** | Not stated | No licence or commercial statement found on their site or API README. The README does warn: *"In the future, you will require an API key which you can obtain by feeding adsb.lol."* |
-| adsb.fi | **Prohibited** | *"adsb.fi open data is for personal, non-commercial use only."* Invites contact for commercial terms. |
-| OpenSky | **Prohibited** | *"Any use by a for-profit or commercial entity … requires a written license … regardless of purpose"*, and separately *"Use of the REST API in any operational capacity — including … an automated system (even if only internal) — requires a previous written agreement."* |
-| ADSBexchange | Paid tier | Community API is "personal and non-commercial"; commercial data is a separate product. |
-| ADSBHub | N/A | Requires feeding at least one station to receive anything, and serves TCP/SBS rather than REST. |
+| Provider | Personal use | Documented limit | Notes |
+|---|---|---|---|
+| **adsb.fi** | **Yes** | 1 req/s | *"for personal, non-commercial use only"* — exactly this case. Explicitly *"compatible with the ADSBexchange v2 API"*, so it shares our schema. Uses `/icao/` for a comma-separated list. |
+| **airplanes.live** | **Yes** | 1 req/s | Commercial use needs a separate arrangement ([their page](https://airplanes.live/commercial-use/) says only "contact@airplanes.live"); personal use is the ordinary case. Currently blocking this IP — see the incident below. |
+| **adsb.lol** | Presumed | "dynamic based on the environment load" | No licence or permitted-use statement found anywhere on their site or README. Silence is not permission, but nothing prohibits personal use either. The README warns: *"In the future, you will require an API key which you can obtain by feeding adsb.lol."* |
+| ADSBexchange | Yes, paid | per plan | Community API is *"for personal and non-commercial use"*, low-cost rather than free. |
+| **OpenSky** | **No** | 400–14,400 credits/day by tier | The commercial clause stops mattering, but a second one does not: *"Use of the REST API in any operational capacity — including integration into a live product, service, or automated system (even if only internal) — requires a previous written agreement, even for non-profit or governmental entities."* A polling tracker is exactly that. Their licence also grants use *"solely for the purpose of non-profit research and non-profit education"*, which hobby tracking is not. |
+| ADSBHub | N/A | — | Requires feeding at least one station to receive anything, and serves TCP/SBS rather than REST. |
+
+**OpenSky is the trap here.** The obvious reading — "it's non-commercial now, so
+OpenSky is fine" — is wrong. Its operational-automation clause is independent
+of commerciality and catches any automated poller.
 
 An earlier version of this document asserted adsb.lol data was ODbL. That was
 not verified and has been removed; the licence should be confirmed with them
 rather than assumed.
 
-**Actions this implies**, none yet taken:
+We poll **adsb.lol, airplanes.live and adsb.fi**, all three, staggered. They
+share a schema, so a third source costs one line and buys a third independent
+receiver network — which is the only real defence against both the coverage
+gaps in §13 and a single provider going dark.
 
-1. Email `contact@airplanes.live`. One message resolves both the commercial
-   question and the IP block recorded below.
-2. Ask adsb.lol what terms apply, and whether the planned feeder-gated API key
-   would affect us.
-3. **Consider feeding.** A receiver at base would unlock feeder tiers
-   (ADSBexchange grants feeders API access; adsb.lol intends to), give
-   unmetered local data, and improve coverage exactly where the fleet operates
-   — addressing the licensing risk and the coverage limitation in §13 together.
+**Actions outstanding:**
 
-adsb.fi is worth noting technically: it is explicitly *"compatible with the
-ADSBexchange v2 API"*, so it shares the schema this code already speaks and
-would be a one-line config addition **if** commercial terms were agreed. Its
-documented limit is 1 request per second.
+1. Email `contact@airplanes.live` to clear the IP block recorded below.
+2. **Consider feeding.** A receiver would give unmetered local data with no
+   rate limit at all, unlock feeder tiers (ADSBexchange grants feeders API
+   access; adsb.lol intends to), and improve coverage exactly where you are —
+   addressing the roadmap risk and §13's coverage limitation together.
 
 ## 2. Query by hex, not by geography
 
@@ -626,12 +631,11 @@ Recorded so nobody has to rediscover them:
    and along airline routes at altitude, and poor over inland and regional
    areas at low level. VH-TAV in particular will drop out if it operates at low
    level away from population centres. There is no software fix.
-2. **This is not a flight-following system.** Operators who need dependable
-   position reporting for duty-of-care use satellite trackers (Spidertracks,
-   TracPlus, SkyTrac) precisely because ADS-B ground coverage in Australia is
-   inadequate for the purpose. This tool is a situational-awareness display. If
-   a satellite tracker is ever fitted, its feed should become the authoritative
-   source and ADS-B the supplement.
+2. **This is not a flight-following system**, and must not be relied on as
+   one. Coverage gaps are normal, not exceptional. Operators who need
+   dependable position reporting use satellite trackers (Spidertracks, TracPlus,
+   SkyTrac) precisely because ADS-B ground coverage in Australia is inadequate
+   for the purpose.
 3. **Inferred flights are not records.** See §7.
 4. Providers may change rate limits or terms without notice; both are run as
    free community services with no SLA.

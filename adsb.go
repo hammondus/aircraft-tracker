@@ -130,11 +130,16 @@ func defaultQuietHours() QuietHours {
 // the redundancy costs one extra request every few seconds, and it halves the
 // effective refresh interval as a side effect of staggering.
 //
-// adsb.fi serves the same schema and can be added here as a third source.
+// All three speak the same schema, so adding one costs a line.
+//
+// adsb.fi is "personal, non-commercial use only" per its documented terms, and
+// uses /icao/ rather than /hex/ for a comma-separated list -- that is the form
+// its README documents for multiple aircraft.
 func DefaultProviders() []Provider {
 	return []Provider{
 		{Name: "adsb.lol", URL: "https://api.adsb.lol/v2/hex/"},
 		{Name: "airplanes.live", URL: "https://api.airplanes.live/v2/hex/"},
+		{Name: "adsb.fi", URL: "https://opendata.adsb.fi/api/v2/icao/"},
 	}
 }
 

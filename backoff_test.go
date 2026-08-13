@@ -207,8 +207,8 @@ func TestDefaultProvidersStayWellUnderDocumentedLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewPoller(c)
-	if len(p.sources) != 2 {
-		t.Fatalf("got %d default providers, want 2", len(p.sources))
+	if len(p.sources) != 3 {
+		t.Fatalf("got %d default providers, want 3", len(p.sources))
 	}
 	for _, s := range p.sources {
 		if s.interval != defaultPollInterval {
@@ -230,13 +230,14 @@ func TestStaggerHalvesEffectiveRefresh(t *testing.T) {
 	}
 	p := NewPoller(c)
 
-	// Two 5s sources: the first starts immediately, the second half an interval
-	// in, so fleet state refreshes every 2.5s.
-	if got := p.startOffset(0); got != 0 {
-		t.Errorf("first source offset = %v, want 0", got)
-	}
-	if got, want := p.startOffset(1), defaultPollInterval/2; got != want {
-		t.Errorf("second source offset = %v, want %v", got, want)
+	// Three sources spread across the interval, so fleet state refreshes about
+	// three times per interval rather than once.
+	n := len(p.sources)
+	for i := range n {
+		want := time.Duration(i) * defaultPollInterval / time.Duration(n)
+		if got := p.startOffset(i); got != want {
+			t.Errorf("source %d offset = %v, want %v", i, got, want)
+		}
 	}
 
 	// A lone provider has nothing to interleave with and must not be delayed.

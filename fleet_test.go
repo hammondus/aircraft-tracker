@@ -37,8 +37,8 @@ func TestLoadConfigDerivesHexes(t *testing.T) {
 	if c.Listen != ":8080" {
 		t.Errorf("listen default = %q", c.Listen)
 	}
-	if len(c.Providers) != 2 {
-		t.Errorf("expected both default providers, got %+v", c.Providers)
+	if len(c.Providers) != len(DefaultProviders()) {
+		t.Errorf("expected the default providers, got %+v", c.Providers)
 	}
 }
 
