@@ -33,8 +33,19 @@ Two files. `fleet.json` is the aircraft list and is committed:
 ```
 
 No hex is needed — three-letter `VH-` registrations derive their ICAO address
-arithmetically. Anything else needs an explicit `"hex"`, which
-`https://api.adsbdb.com/v0/aircraft/<rego>` will give you.
+arithmetically. Anything else needs an explicit `"hex"`.
+
+Check the list against the Australian civil aircraft register:
+
+```sh
+./aircraft-tracker -casa fleet.json
+```
+
+It reads CASA's published CSV, fills in any missing description, and flags
+anything whose description does not match the register or that is no longer
+registered at all. It reports rather than rewrites: hand-written descriptions
+carry popular names ("Baron", "Turbo Commander") that the register does not
+have.
 
 `config.json` holds everything else, including the password hash, and is **not**
 committed. Start from `config.example.json`. Every field except the fleet has a

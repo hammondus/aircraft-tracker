@@ -26,8 +26,15 @@ func main() {
 	verbose := flag.Bool("v", false, "log every position fix, not just status changes")
 	hashpw := flag.Bool("hashpw", false, "read a password from stdin and print its hash for config.json")
 	insecure := flag.Bool("insecure", false, "run without authentication (password_hash empty)")
+	casa := flag.String("casa", "", "check a fleet file against the CASA aircraft register and exit")
 	flag.Parse()
 
+	if *casa != "" {
+		if err := checkFleetAgainstCASA(*casa); err != nil {
+			log.Fatalf("casa: %v", err)
+		}
+		return
+	}
 	if *hashpw {
 		if err := printPasswordHash(); err != nil {
 			log.Fatalf("hashpw: %v", err)

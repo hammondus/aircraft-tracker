@@ -1,15 +1,67 @@
 [
-  { "rego": "VH-FLM", "type": "BE95", "desc": "Beech D95A Travel Air" },
-  { "rego": "VH-VSO", "type": "B190", "desc": "Beech 1900C-1" },
-  { "rego": "VH-OYM", "type": "PA31", "desc": "Piper PA-31 Navajo" },
-  { "rego": "VH-SOU", "type": "C500", "desc": "Cessna Citation I" },
-  { "rego": "VH-YSO", "type": "B190", "desc": "Beech 1900C-1" },
-  { "rego": "VH-IJM", "type": "BE95", "desc": "Beech E95 Travel Air" },
-  { "rego": "VH-XAQ", "type": "PC12", "desc": "Pilatus PC-12/45" },
-  { "rego": "VH-NWI", "type": "PC12", "desc": "Pilatus PC-12" },
-  { "rego": "VH-MWW", "type": "BE58", "desc": "Beech 58 Baron" },
-  { "rego": "VH-TAV", "type": "P68", "desc": "Vulcanair P.68C" },
-  { "rego": "VH-YJI", "type": "AC50", "desc": "Aero Commander 500-S" },
-  { "rego": "VH-YJE", "type": "AC50", "desc": "Aero Commander 500-S" },
-  { "rego": "VH-WAM", "type": "AC50", "desc": "Aero Commander 500-S" }
+  {
+    "rego": "VH-FLM",
+    "type": "BE95",
+    "desc": "Beech D95A Travel Air"
+  },
+  {
+    "rego": "VH-VSO",
+    "type": "B190",
+    "desc": "Beech 1900C-1"
+  },
+  {
+    "rego": "VH-OYM",
+    "type": "PA31",
+    "desc": "Piper PA-31 Navajo"
+  },
+  {
+    "rego": "VH-SOU",
+    "type": "AC90",
+    "desc": "Rockwell 690A Turbo Commander"
+  },
+  {
+    "rego": "VH-YSO",
+    "type": "B190",
+    "desc": "Beech 1900C-1"
+  },
+  {
+    "rego": "VH-IJM",
+    "type": "BE95",
+    "desc": "Beech E95 Travel Air"
+  },
+  {
+    "rego": "VH-XAQ",
+    "type": "PC12",
+    "desc": "Pilatus PC-12/45"
+  },
+  {
+    "rego": "VH-NWI",
+    "type": "PC12",
+    "desc": "Pilatus PC-12"
+  },
+  {
+    "rego": "VH-MWW",
+    "type": "BE58",
+    "desc": "Beech 58 Baron"
+  },
+  {
+    "rego": "VH-TAV",
+    "type": "P68",
+    "desc": "Vulcanair P.68C"
+  },
+  {
+    "rego": "VH-YJI",
+    "type": "AC50",
+    "desc": "Aero Commander 500-S"
+  },
+  {
+    "rego": "VH-YJE",
+    "type": "AC50",
+    "desc": "Aero Commander 500-S"
+  },
+  {
+    "rego": "VH-WAM",
+    "type": "AC50",
+    "desc": "Aero Commander 500-S"
+  }
 ]

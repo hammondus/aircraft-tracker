@@ -19,9 +19,45 @@ Adding an aircraft is one line:
 ```
 
 No hex needed — three-letter VH- registrations derive their ICAO address
-arithmetically (§3). `type` and `desc` are cosmetic; look them up once at
-<https://api.adsbdb.com/v0/aircraft/VH-ABC> if you want them accurate. Anything
-that is not a three-letter VH- registration needs an explicit `"hex"`.
+arithmetically (§3). Anything that is not a three-letter VH- registration needs
+an explicit `"hex"`.
+
+`type` and `desc` are cosmetic. They were originally seeded from adsbdb.com,
+which got one of thirteen wrong — it reported VH-SOU as a Cessna Citation I when
+it is a Rockwell 690A Turbo Commander, and its ownership data was stale for
+nearly every aircraft. Aggregated databases lag.
+
+### Checking the fleet against CASA
+
+```sh
+./aircraft-tracker -casa fleet.json
+```
+
+CASA publishes the Australian civil aircraft register as a CSV, and that is the
+authoritative source for VH- marks. One request covers the whole fleet, it needs
+no dependency (`encoding/csv` is standard library), and CASA publishes it
+expressly for this use.
+
+**Not** the search page at `casa.gov.au/search-centre/aircraft-register`. That
+sits behind an Akamai Bot Manager interstitial with a proof-of-work challenge —
+it is deliberately closed to automation, and working around a bot challenge is
+not something to build into a tool. It is the right thing for a person looking
+up one aircraft in a browser, and the wrong thing for a program.
+
+The check **reports rather than overwrites**. It fills in an empty description,
+flags one that does not mention the register's model, and otherwise leaves it
+alone: hand-written descriptions carry the popular name — "Baron", "Travel Air",
+"Turbo Commander" — which the register does not have, so rewriting them would
+trade information for consistency. The ICAO type code is never touched, because
+CASA does not publish it.
+
+Aircraft absent from the register are reported too. CASA lists only *current*
+registrations, so absence means sold overseas, scrapped, or a lapsed mark — not
+that the aircraft never existed.
+
+**None of this can affect tracking.** The ICAO address is derived from the
+registration letters, so any aircraft wearing a mark has that mark's address
+whatever type it is. Reuse changes the aeroplane, not the address.
 
 ---
 
