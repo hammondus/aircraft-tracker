@@ -15,3 +15,9 @@
 
 # Server-side history bind mount (see compose.yml)
 /history/
+
+# Editor scratch files
+*.swp
+*.swo
+*~
+.DS_Store

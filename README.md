@@ -60,7 +60,7 @@ make tiles                                          # ~1 GB, see below
 make run
 ```
 
-Then <http://localhost:8080>.
+Then <http://localhost:8099>.
 
 `-hashpw` reads from stdin rather than taking a flag, because an argument would
 land in your shell history and the process list. Piping it also avoids the
@@ -109,17 +109,23 @@ Docker Desktop on macOS maps bind-mount ownership and hides this, so it will
 not reproduce on a Mac. If you would rather not `chown`, run the container as
 yourself instead by adding `user: "1000:1000"` to the service.
 
-Server `config.json` needs container paths:
+Server `config.json`:
 
 ```json
 {
   "listen": ":8099",
   "password_hash": "pbkdf2-sha256$...",
   "fleet_file": "fleet.json",
-  "tiles_path": "/data/tiles/australia.pmtiles",
-  "history_path": "/data/history/history.db"
+  "tiles_path": "tiles/australia.pmtiles",
+  "history_path": "history/history.db"
 }
 ```
+
+All paths are relative to the config file itself, so these work unchanged
+whether you run in Docker or directly. **Set `history_path` explicitly.** Its
+default lands beside the working directory, which inside the container is `/data`
+— part of the image rather than the mounted volume, so the recorder cannot write
+there and exits into a restart loop.
 
 Then point nginx proxy manager at port 8099. The app sets
 `X-Accel-Buffering: no` on the event stream, so SSE works without touching the

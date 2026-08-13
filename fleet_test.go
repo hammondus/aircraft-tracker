@@ -214,3 +214,57 @@ func TestShippedFleetFileIsValid(t *testing.T) {
 		}
 	}
 }
+
+// Paths in a config file should mean what they look like they mean: relative to
+// that file, exactly as fleet_file already is. Resolving them against the
+// process's working directory instead put the database inside the container
+// image rather than the mounted volume, and produced a restart loop whose
+// message blamed permissions.
+func TestPathsResolveRelativeToConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fleet.json"), []byte(`[{"rego":"VH-YSO"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{
+		"fleet_file": "fleet.json",
+		"tiles_path": "tiles/australia.pmtiles",
+		"history_path": "history/history.db"
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "tiles/australia.pmtiles"); c.TilesPath != want {
+		t.Errorf("tiles_path = %q, want %q", c.TilesPath, want)
+	}
+	if want := filepath.Join(dir, "history/history.db"); c.HistoryPath != want {
+		t.Errorf("history_path = %q, want %q", c.HistoryPath, want)
+	}
+}
+
+// An absolute path is taken as given, so existing deployments keep working.
+func TestAbsolutePathsAreLeftAlone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.json"), []byte(`[{"rego":"VH-YSO"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(p, []byte(`{
+		"fleet_file": "f.json",
+		"tiles_path": "/data/tiles/australia.pmtiles",
+		"history_path": "/data/history/history.db"
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TilesPath != "/data/tiles/australia.pmtiles" || c.HistoryPath != "/data/history/history.db" {
+		t.Errorf("absolute paths were rewritten: %q, %q", c.TilesPath, c.HistoryPath)
+	}
+}

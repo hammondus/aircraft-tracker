@@ -181,6 +181,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := c.loadFleetFile(path); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	c.resolvePaths(filepath.Dir(path))
 	if err := c.normalise(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -211,6 +212,23 @@ func (c *Config) loadFleetFile(configPath string) error {
 		return fmt.Errorf("%s: %w", p, err)
 	}
 	return nil
+}
+
+// resolvePaths makes the tile and history paths relative to the config file,
+// exactly as fleet_file already is.
+//
+// Without this they resolve against the process's working directory, which in
+// the container is /data -- so the default "history.db" lands at
+// /data/history.db, inside the image and unwritable, rather than in the mounted
+// /data/history. That produced a restart loop whose message pointed at
+// permissions when the real fault was the path. Paths in a config file should
+// mean what they look like they mean: relative to that file.
+func (c *Config) resolvePaths(dir string) {
+	for _, p := range []*string{&c.TilesPath, &c.HistoryPath} {
+		if *p != "" && !filepath.IsAbs(*p) {
+			*p = filepath.Join(dir, *p)
+		}
+	}
 }
 
 func (c *Config) normalise() error {
