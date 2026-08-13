@@ -4,36 +4,48 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fleet Tracker</title>
+<link rel="stylesheet" href="/vendor/maplibre-gl@6.3.0/maplibre-gl.css">
 <link rel="stylesheet" href="{{.CSS}}">
 </head>
-<body>
-<header>
-  <h1>Fleet Tracker</h1>
-  <span id="conn" class="badge" data-state="connecting">connecting</span>
-  <form method="post" action="/logout"><button type="submit" class="link">Sign out</button></form>
-</header>
+<body class="app"
+      data-tiles="{{.Tiles}}"
+      data-layers="{{.Layers}}"
+      data-sprite="{{.Sprite}}"
+      data-glyphs="{{.Glyphs}}"
+      data-bounds="{{index .Bounds 0}},{{index .Bounds 1}},{{index .Bounds 2}},{{index .Bounds 3}}">
 
-<main>
-  <table id="fleet">
-    <thead>
-      <tr><th>Aircraft</th><th>Status</th><th>Position</th><th>Altitude</th><th>Speed</th><th>Track</th><th>Age</th><th>Source</th></tr>
-    </thead>
-    <tbody>
-      {{range .Fleet}}
-      <tr data-hex="{{.Hex}}">
-        <th scope="row">{{.Rego}}<span class="type">{{.Type}}</span></th>
-        <td class="status">—</td><td class="pos">—</td><td class="alt">—</td>
-        <td class="gs">—</td><td class="track">—</td><td class="age">—</td><td class="src">—</td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  <p class="attrib">
-    Positions from <a href="https://adsb.lol/">adsb.lol</a> (ODbL) and
-    <a href="https://airplanes.live/">airplanes.live</a>.
-    Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.
-  </p>
-</main>
-<script src="{{.JS}}" defer></script>
+<div id="map"></div>
+
+<aside id="panel">
+  <header>
+    <h1>Fleet</h1>
+    <span id="conn" class="badge" data-state="connecting">connecting</span>
+  </header>
+
+  <ul id="fleet">
+    {{range .Fleet}}
+    <li data-hex="{{.Hex}}" data-status="no_contact">
+      <button type="button" class="row" aria-label="Show {{.Rego}} on the map">
+        <span class="rego">{{.Rego}}</span>
+        <span class="type">{{.Type}}</span>
+        <span class="status">no contact</span>
+        <span class="detail"></span>
+      </button>
+    </li>
+    {{end}}
+  </ul>
+
+  <footer>
+    <form method="post" action="/logout"><button type="submit" class="link">Sign out</button></form>
+    <p class="attrib">
+      Positions <a href="https://adsb.lol/">adsb.lol</a>,
+      <a href="https://airplanes.live/">airplanes.live</a>.
+      Map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.
+    </p>
+  </footer>
+</aside>
+
+<script src="/vendor/pmtiles@4.5.0/pmtiles.js"></script>
+<script type="module" src="{{.JS}}"></script>
 </body>
 </html>

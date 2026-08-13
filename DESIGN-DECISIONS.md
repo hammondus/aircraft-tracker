@@ -241,12 +241,43 @@ first, and treat what it says as the answer. If it is genuinely undocumented,
 pick a conservative rate and let the backoff adapt — do not go looking for the
 ceiling. The first refusal is a stop signal, not a data point.
 
-### Licensing
+### Licensing and commercial use — UNRESOLVED
 
-adsb.lol data is ODbL (attribution + share-alike on derived databases).
-airplanes.live has its own terms. Both are satisfied by an attribution line in
-the UI footer, which we include. Neither is a problem for internal use, but
-that changes if this is ever exposed publicly.
+**Southern Airlines is a for-profit operator, and this is an operational
+system. That makes commercial-use terms a gating question, not a footnote.**
+Attribution alone does not settle it. An attribution line is in the UI footer
+regardless.
+
+Surveyed 2026-08-13:
+
+| Provider | Commercial use | Notes |
+|---|---|---|
+| **airplanes.live** | Contact required | Publishes a [commercial-use page](https://airplanes.live/commercial-use/) whose entire content is "Commercial Use Access — contact@airplanes.live — RapidAPI coming soon". No free commercial tier is documented. |
+| **adsb.lol** | Not stated | No licence or commercial statement found on their site or API README. The README does warn: *"In the future, you will require an API key which you can obtain by feeding adsb.lol."* |
+| adsb.fi | **Prohibited** | *"adsb.fi open data is for personal, non-commercial use only."* Invites contact for commercial terms. |
+| OpenSky | **Prohibited** | *"Any use by a for-profit or commercial entity … requires a written license … regardless of purpose"*, and separately *"Use of the REST API in any operational capacity — including … an automated system (even if only internal) — requires a previous written agreement."* |
+| ADSBexchange | Paid tier | Community API is "personal and non-commercial"; commercial data is a separate product. |
+| ADSBHub | N/A | Requires feeding at least one station to receive anything, and serves TCP/SBS rather than REST. |
+
+An earlier version of this document asserted adsb.lol data was ODbL. That was
+not verified and has been removed; the licence should be confirmed with them
+rather than assumed.
+
+**Actions this implies**, none yet taken:
+
+1. Email `contact@airplanes.live`. One message resolves both the commercial
+   question and the IP block recorded below.
+2. Ask adsb.lol what terms apply, and whether the planned feeder-gated API key
+   would affect us.
+3. **Consider feeding.** A receiver at base would unlock feeder tiers
+   (ADSBexchange grants feeders API access; adsb.lol intends to), give
+   unmetered local data, and improve coverage exactly where the fleet operates
+   — addressing the licensing risk and the coverage limitation in §13 together.
+
+adsb.fi is worth noting technically: it is explicitly *"compatible with the
+ADSBexchange v2 API"*, so it shares the schema this code already speaks and
+would be a one-line config addition **if** commercial terms were agreed. Its
+documented limit is 1 request per second.
 
 ## 2. Query by hex, not by geography
 
@@ -417,12 +448,60 @@ display a full-colour street map underneath the traffic is noise.
 
 ### Client-side vendoring
 
-MapLibre GL JS and `pmtiles.js` (~10 KB, registers the `pmtiles://` protocol
-handler so MapLibre can range-request into the archive) are both vendored and
-served from our own origin, not a CDN.
+Everything the map needs is served from our own origin — MapLibre, pmtiles.js,
+the Protomaps sprites, and the Noto Sans glyph ranges. About 2.4 MB embedded in
+the binary. An internal ops display must keep working when a third party is
+down, and must not tell anyone else who is looking at it.
+
+Vendored assets live under **version-pinned** directories
+(`/vendor/maplibre-gl@6.3.0/…`) rather than content-hashed filenames. MapLibre's
+ESM build imports `./maplibre-gl-shared.mjs` relatively, and a hashed filename
+would break that import. The version in the path is the cache key instead:
+upgrading means a new directory, so the URL still changes with the bytes. Our
+own `app.css`/`app.js`, which change constantly, keep content hashing.
 
 Serving needs no work on our side: Go's `http.ServeContent` handles HTTP
 `Range` correctly, which is exactly what the pmtiles protocol requires.
+
+### Things that only surfaced in a browser
+
+Recorded because each cost real time and none is discoverable from the Go side:
+
+- **MapLibre v6 is ESM-only with named exports and no default.** It is a
+  namespace import, not a default one.
+- **It loads `maplibre-gl-worker.mjs` as a third file.** Missing it stalls tile
+  parsing with no console error — the map simply never fires `load`, and
+  because the client awaits that before connecting the SSE stream, the fleet
+  panel silently never populates either. One missing file, two symptoms that
+  look unrelated.
+- **Sprite and glyph URLs must be absolute**, with scheme and host. The server
+  cannot know its own public origin behind a proxy, so the client prefixes
+  `location.origin`. Use string concatenation, not `new URL()` — the glyphs
+  path contains `{fontstack}` and `{range}` placeholders that MapLibre matches
+  literally, and URL parsing percent-encodes the braces.
+- **The aircraft icon must be registered with `sdf: true`**, or `icon-color`
+  silently does nothing and every aircraft draws the same colour.
+- **`maxBounds` constrains the whole viewport, not the centre.** A box tight
+  around Australia cannot be satisfied at a zoom where the viewport is wider
+  than the box, so MapLibre clamps the centre — which silently undid the
+  panel padding and pinned `setCenter` near the middle of the box, so the
+  easternmost aircraft rendered underneath the panel and clicking to follow did
+  nothing. The bounds are now deliberately generous: wide enough to stop anyone
+  wandering to Europe, never tight enough to bind at Australian zoom levels.
+- **First paint is slow.** Reading the pmtiles directory out of a 1 GB archive
+  takes several seconds before anything renders. Not a bug, but long enough to
+  look like one.
+
+### Following an aircraft
+
+Clicking a fleet row centres the map on that aircraft, offset by half the panel
+width so it lands in the visible half rather than under the panel.
+
+While following, the map is only nudged when the aircraft drifts out of the
+middle 60% of the usable area. Recentring every frame would fight the easing
+started by the click, and would mean the map never sits still even when the
+aircraft has barely moved. Dragging the map cancels following — panning by hand
+means you want to look somewhere else.
 
 ## 9. Layout: flat `package main`
 
@@ -556,3 +635,17 @@ Recorded so nobody has to rediscover them:
 3. **Inferred flights are not records.** See §7.
 4. Providers may change rate limits or terms without notice; both are run as
    free community services with no SLA.
+5. **A provider outage is indistinguishable from a quiet sky.** Observed on
+   2026-08-13: adsb.lol returned `HTTP 200` with an empty aircraft array for
+   every query worldwide — Sydney, London, New York, military — for a sustained
+   period. Because we query by hex, an empty response is exactly what a parked
+   fleet looks like, so the UI would have shown "no contact" with complete
+   confidence while the data source was simply down.
+
+   This is the same class of problem as §4's visibility states, and matters for
+   the same reason: on an ops display, "no contact" has to be trustworthy. The
+   fix, if it proves necessary, is a canary — periodically query somewhere
+   guaranteed busy (a radius over a capital city, or `/v2/mil`) and treat a
+   zero result as *provider unhealthy* rather than *nothing flying*, so the UI
+   can say so. Not built yet; recorded so the failure is recognised rather
+   than rediscovered.

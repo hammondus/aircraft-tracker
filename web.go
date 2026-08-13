@@ -80,6 +80,28 @@ func loadAssets() (*assets, error) {
 	return a, nil
 }
 
+// vendorHandler serves third-party client libraries from version-pinned paths.
+//
+// Not content-hashed, unlike our own assets: MapLibre's ESM build imports
+// "./maplibre-gl-shared.mjs" relatively, and a hashed filename would break that
+// import. The version in the directory name is the cache key instead --
+// upgrading means a new path, so the URL still changes with the bytes.
+//
+// Vendored rather than loaded from a CDN because an internal ops display must
+// keep working when a third party is down, and should not tell anyone else who
+// is looking at it.
+func vendorHandler() (http.Handler, error) {
+	sub, err := fs.Sub(webFS, "web/vendor")
+	if err != nil {
+		return nil, err
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	return http.StripPrefix("/vendor/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", immutableCache)
+		fileServer.ServeHTTP(w, r)
+	})), nil
+}
+
 func (a *assets) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		got, ok := a.byURL[r.URL.Path]
@@ -148,6 +170,7 @@ func (t *tiles) handler() http.HandlerFunc {
 }
 
 type server struct {
+	vendor  http.Handler
 	cfg     *Config
 	hub     *Hub
 	poller  *Poller
@@ -167,7 +190,12 @@ func newServer(cfg *Config, hub *Hub, p *Poller) (*server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("templates: %w", err)
 	}
+	vendor, err := vendorHandler()
+	if err != nil {
+		return nil, fmt.Errorf("vendor assets: %w", err)
+	}
 	return &server{
+		vendor:  vendor,
 		cfg:     cfg,
 		hub:     hub,
 		poller:  p,
@@ -182,6 +210,7 @@ func newServer(cfg *Config, hub *Hub, p *Poller) (*server, error) {
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", s.assets.handler())
+	mux.Handle("GET /vendor/", s.vendor)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		fmt.Fprintln(w, "ok")
@@ -308,10 +337,16 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "index.html", map[string]any{
-		"Fleet": s.cfg.Fleet,
-		"CSS":   s.assets.byName["app.css"],
-		"JS":    s.assets.byName["app.js"],
-		"Tiles": s.tiles.url(),
+		"Fleet":  s.cfg.Fleet,
+		"CSS":    s.assets.byName["app.css"],
+		"JS":     s.assets.byName["app.js"],
+		"Layers": s.assets.byName["basemap-layers.json"],
+		"Tiles":  s.tiles.url(),
+		// Trailing "dark" is a prefix, not a file: MapLibre appends .json,
+		// .png and the @2x variants itself.
+		"Sprite": "/vendor/basemaps-assets@v4/sprites/dark",
+		"Glyphs": "/vendor/basemaps-assets@v4/fonts/{fontstack}/{range}.pbf",
+		"Bounds": australiaBounds,
 	})
 }
 
@@ -324,3 +359,8 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 		log.Printf("render %s: %v", name, err)
 	}
 }
+
+// australiaBounds matches the bbox the tile archive was clipped to by
+// `make tiles`. Panning outside it shows empty space, so the map is fenced to
+// where there is data.
+var australiaBounds = [4]float64{112.9, -43.7, 153.7, -10.6}
