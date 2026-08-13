@@ -279,3 +279,30 @@ func TestShippedDefaults(t *testing.T) {
 		t.Errorf("quiet window = %s-%s, want 12:00Z-20:00Z", c.QuietHours.From, c.QuietHours.To)
 	}
 }
+
+// An airliner is always flying somewhere, so counting reference aircraft as
+// activity would pin the poller at its fast rate forever and undo the entire
+// idle scheme.
+func TestReferenceAircraftDoNotDefeatIdling(t *testing.T) {
+	c := &Config{Fleet: []Member{
+		{Rego: "VH-YSO"},
+		{Rego: "VH-VXA", Reference: true},
+	}}
+	if err := c.normalise(); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPoller(c)
+	now := utc(6, 0)
+
+	// The airliner is up, ours is not.
+	p.merge([]Fix{{Hex: p.members[1].Hex, At: now}})
+	if mode, _ := p.modeAt(now); mode != modeIdle {
+		t.Errorf("a reference aircraft alone put the poller in %s, want idle", mode)
+	}
+
+	// Ours appears, and only then does the rate rise.
+	p.merge([]Fix{{Hex: p.members[0].Hex, At: now}})
+	if mode, _ := p.modeAt(now); mode != modeActive {
+		t.Errorf("our own aircraft did not restore the fast rate: %s", mode)
+	}
+}

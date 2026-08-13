@@ -30,7 +30,7 @@
   <section id="live-pane">
     <ul id="fleet">
       {{range .Fleet}}
-      <li data-hex="{{.Hex}}" data-status="no_contact">
+      <li data-hex="{{.Hex}}" data-status="no_contact"{{if .Reference}} data-reference="true"{{end}}>
         <button type="button" class="row" aria-label="Show {{.Rego}} on the map">
           <span class="rego">{{.Rego}}</span>
           <span class="type">{{.Type}}</span>
@@ -40,6 +40,10 @@
       </li>
       {{end}}
     </ul>
+    <p class="hint" id="ref-note">
+      Reference aircraft below are airliners, not yours. They are here to prove
+      the feed is working: if they are blank too, the problem is this end.
+    </p>
   </section>
 
   <section id="history-pane" hidden>

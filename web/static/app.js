@@ -77,6 +77,7 @@ function features(now) {
         hex,
         rego: entry.rego,
         status: entry.status,
+        reference: Boolean(entry.reference),
         track: entry.fix.track_deg || 0,
         onGround: Boolean(entry.fix.on_ground),
       },
@@ -155,7 +156,7 @@ async function initMap() {
     id: "fleet-trail",
     type: "circle",
     source: "fleet",
-    filter: ["==", ["get", "status"], "stale"],
+    filter: ["all", ["==", ["get", "status"], "stale"], ["!", ["get", "reference"]]],
     paint: {
       "circle-radius": 14,
       "circle-color": "#fbbf24",
@@ -176,13 +177,22 @@ async function initMap() {
     paint: {
       // Status must be legible at a glance: an aircraft nobody can hear cannot
       // look like one being tracked.
+      // Reference airliners get one muted colour whatever their status: they
+      // are scenery proving the feed works, and colouring them like the fleet
+      // would drown thirteen aircraft in eight.
       "icon-color": [
-        "match", ["get", "status"],
-        "live", "#4ade80",
-        "stale", "#fbbf24",
-        "#64748b",
+        "case",
+        ["get", "reference"], "#64748b",
+        ["match", ["get", "status"],
+          "live", "#4ade80",
+          "stale", "#fbbf24",
+          "#64748b"],
       ],
-      "icon-opacity": ["match", ["get", "status"], "no_contact", 0.45, 1],
+      "icon-opacity": [
+        "case",
+        ["get", "reference"], 0.5,
+        ["match", ["get", "status"], "no_contact", 0.45, 1],
+      ],
     },
   });
   map.addLayer({
@@ -198,7 +208,7 @@ async function initMap() {
       "text-allow-overlap": true,
     },
     paint: {
-      "text-color": "#dfe6ee",
+      "text-color": ["case", ["get", "reference"], "#8b98a8", "#dfe6ee"],
       "text-halo-color": "#10141a",
       "text-halo-width": 1.5,
     },
@@ -309,6 +319,7 @@ function applySnapshot(states) {
     const isNew = !prev || !prev.fix || prev.fix.at !== s.fix?.at;
     fleet.set(s.hex, {
       rego: s.rego,
+      reference: Boolean(s.reference),
       status: s.status,
       fix: s.fix ?? null,
       ageSec: s.age_sec ?? 0,

@@ -119,6 +119,9 @@ func (s *Store) Record(states []State) (int, error) {
 		if st.Fix == nil || st.Status == StatusNoContact {
 			continue
 		}
+		if st.Reference {
+			continue // liveness check, not history worth keeping
+		}
 		prev, ok := s.last[st.Hex]
 		var prevp *Fix
 		if ok {

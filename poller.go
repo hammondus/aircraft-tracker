@@ -173,8 +173,12 @@ func NewPoller(c *Config) *Poller {
 func (p *Poller) active(now time.Time) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	for _, f := range p.latest {
-		if now.Sub(f.At) <= p.idleTimeout {
+	for _, m := range p.members {
+		if m.Reference {
+			continue // an airliner is always flying somewhere; it proves nothing
+		}
+		f, ok := p.latest[m.Hex]
+		if ok && now.Sub(f.At) <= p.idleTimeout {
 			return true
 		}
 	}

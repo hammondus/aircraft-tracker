@@ -338,3 +338,27 @@ func TestStatsReportsArchiveSize(t *testing.T) {
 		t.Errorf("oldest = %v, want %v", oldest, base)
 	}
 }
+
+// Reference aircraft are airliners carried only to prove the feed works. They
+// must not be recorded: airline traffic would add gigabytes a year of tracks
+// nobody asked for and bury the aircraft that matter.
+func TestReferenceAircraftAreNotRecorded(t *testing.T) {
+	s := testStore(t)
+	mine := state("7c7c16", base, -33.0, 151.0, false)
+	ref := state("7c6d8c", base, -34.0, 151.0, false)
+	ref.Reference = true
+
+	n, err := s.Record([]State{mine, ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("recorded %d fixes, want only the one that is ours", n)
+	}
+	if got, _ := s.Track("7c6d8c", base.Add(-time.Hour), base.Add(time.Hour)); len(got) != 0 {
+		t.Errorf("reference aircraft left %d rows in the archive", len(got))
+	}
+	if got, _ := s.Track("7c7c16", base.Add(-time.Hour), base.Add(time.Hour)); len(got) != 1 {
+		t.Errorf("our own aircraft recorded %d rows, want 1", len(got))
+	}
+}

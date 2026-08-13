@@ -26,6 +26,22 @@ type Member struct {
 	// Either way, a check that nags forever about a difference already settled
 	// teaches you to ignore it.
 	Verified bool `json:"verified,omitempty"`
+	// Reference marks an aircraft that is not yours, carried only to prove the
+	// pipeline works. Airliners in daily service are almost always airborne
+	// somewhere, so an empty map with the reference aircraft showing means your
+	// fleet is genuinely on the ground -- while an empty map with *nothing*
+	// showing means the providers or the poller are broken. Without that,
+	// "no contact" for thirteen rarely-flown aeroplanes is indistinguishable
+	// from a dead application, which is the limitation recorded in §13.
+	//
+	// They are deliberately excluded from two things:
+	//
+	//   - Activity, for idle polling. An airliner is always flying somewhere, so
+	//     counting them would pin the poller at its fast rate forever and undo
+	//     the whole idle scheme.
+	//   - History. Recording airline traffic would add gigabytes a year of
+	//     tracks nobody asked for and bury the aircraft that matter.
+	Reference bool `json:"reference,omitempty"`
 }
 
 // duration lets the config file say "1s" instead of a nanosecond count.

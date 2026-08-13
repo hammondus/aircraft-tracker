@@ -164,3 +164,25 @@ button[type="submit"] {
 /* In history mode the live fleet list is out of the way, and vice versa. */
 body[data-mode="history"] #live-pane { display: none; }
 body[data-mode="live"] #history-pane { display: none; }
+
+/* Reference aircraft are airliners carried only as a liveness check. They must
+   read as clearly not-yours, or a panel of amber Qantas jets looks like a fault
+   in a fleet that is simply on the ground. */
+li[data-reference="true"] { opacity: 0.62; }
+li[data-reference="true"] .rego::after {
+  content: "ref";
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 0.22rem;
+  vertical-align: 0.1em;
+}
+/* They update on the idle cycle, so they are usually "stale" -- which is normal
+   for them and must not be coloured like a warning. */
+li[data-reference="true"] .status { color: var(--dim) !important; }
+
+#ref-note { border-top: 1px solid var(--line); padding-top: 0.6rem; margin-top: 0.5rem; }
+#fleet li:first-of-type[data-reference="true"] { margin-top: 0.4rem; }

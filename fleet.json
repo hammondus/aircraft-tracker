@@ -66,5 +66,53 @@
     "type": "AC50",
     "desc": "Aero Commander 500 Shrike",
     "verified": true
+  },
+  {
+    "rego": "VH-EBN",
+    "type": "A332",
+    "desc": "Qantas Airbus A330-202",
+    "reference": true
+  },
+  {
+    "rego": "VH-QPF",
+    "type": "A333",
+    "desc": "Qantas Airbus A330-303",
+    "reference": true
+  },
+  {
+    "rego": "VH-ZNE",
+    "type": "B789",
+    "desc": "Qantas Boeing 787-9",
+    "reference": true
+  },
+  {
+    "rego": "VH-OGA",
+    "type": "A21N",
+    "desc": "Qantas Airbus A321-271NY",
+    "reference": true
+  },
+  {
+    "rego": "VH-VXA",
+    "type": "B738",
+    "desc": "Qantas Boeing 737-838",
+    "reference": true
+  },
+  {
+    "rego": "VH-VYH",
+    "type": "B738",
+    "desc": "Qantas Boeing 737-838",
+    "reference": true
+  },
+  {
+    "rego": "VH-VZO",
+    "type": "B738",
+    "desc": "Qantas Boeing 737-838",
+    "reference": true
+  },
+  {
+    "rego": "VH-XZS",
+    "type": "B738",
+    "desc": "Qantas Boeing 737-8SA",
+    "reference": true
   }
 ]

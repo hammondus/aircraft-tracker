@@ -778,7 +778,8 @@ Recorded so nobody has to rediscover them:
 3. **Inferred flights are not records.** See §7.
 4. Providers may change rate limits or terms without notice; both are run as
    free community services with no SLA.
-5. **A provider outage is indistinguishable from a quiet sky.** Observed on
+5. **A provider outage is indistinguishable from a quiet sky** — mitigated, not
+   solved, by the reference aircraft described below. Observed on
    2026-08-13: adsb.lol returned `HTTP 200` with an empty aircraft array for
    every query worldwide — Sydney, London, New York, military — for a sustained
    period. Because we query by hex, an empty response is exactly what a parked
@@ -790,5 +791,26 @@ Recorded so nobody has to rediscover them:
    fix, if it proves necessary, is a canary — periodically query somewhere
    guaranteed busy (a radius over a capital city, or `/v2/mil`) and treat a
    zero result as *provider unhealthy* rather than *nothing flying*, so the UI
-   can say so. Not built yet; recorded so the failure is recognised rather
-   than rediscovered.
+   can say so.
+
+   **Partially addressed by reference aircraft.** `fleet.json` carries a
+   handful of Qantas airframes marked `"reference": true`. Airliners in daily
+   service are essentially always airborne somewhere, so if they are showing
+   and yours are not, your aircraft really are on the ground; if *nothing* is
+   showing, the fault is at this end. That distinction is the whole point,
+   because thirteen rarely-flown aeroplanes reading "no contact" otherwise looks
+   identical to a dead application.
+
+   They are excluded from two things on purpose:
+
+   - **Activity**, for idle polling. An airliner is always flying somewhere, so
+     counting them would pin the poller at its fast rate around the clock and
+     undo the entire idle scheme.
+   - **History.** Recording airline traffic would add gigabytes a year of
+     tracks nobody asked for and bury the aircraft that matter.
+
+   A consequence worth knowing: because they do not trigger the fast rate, they
+   update on the idle cycle and therefore read "stale" most of the time. That is
+   normal for them, so the UI shows them muted and tagged rather than in the
+   fleet's live/stale colours — a panel of amber airliners would look like a
+   fault in a fleet that is merely parked.

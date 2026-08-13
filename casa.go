@@ -107,6 +107,11 @@ var corporateNoise = regexp.MustCompile(
 func tidyManufacturer(s string) string {
 	s = corporateNoise.ReplaceAllString(strings.TrimSpace(s), " ")
 	words := strings.Fields(s)
+	// "THE BOEING COMPANY" loses its suffix above and would otherwise read as
+	// "The Boeing".
+	if len(words) > 1 && strings.EqualFold(words[0], "the") {
+		words = words[1:]
+	}
 	for i, w := range words {
 		words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
 	}
