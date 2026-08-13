@@ -92,8 +92,22 @@ printf '%s' 'your-password' | docker run --rm -i aircraft-tracker -hashpw
 $EDITOR config.json          # paste the hash; set the paths below
 make tiles                   # or rsync the .pmtiles up from your laptop
 mkdir -p history
+sudo chown -R 10001:10001 history     # see below
 docker compose up -d --build
 ```
+
+The container runs as uid 10001, and `./history` is bind mounted, so on Linux
+that directory must be writable by that user. Skip the `chown` and the recorder
+cannot create its database, the process exits, and `restart: unless-stopped`
+turns it into a restart loop:
+
+```
+history: /data/history/history.db: unable to open database file (14)
+```
+
+Docker Desktop on macOS maps bind-mount ownership and hides this, so it will
+not reproduce on a Mac. If you would rather not `chown`, run the container as
+yourself instead by adding `user: "1000:1000"` to the service.
 
 Server `config.json` needs container paths:
 

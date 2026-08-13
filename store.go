@@ -79,7 +79,12 @@ func OpenStore(path string) (*Store, error) {
 	}
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("schema: %w", err)
+		// SQLite reports a permissions problem as a bare "unable to open
+		// database file", which gives no hint of the cause. Under Docker this
+		// is nearly always a bind-mounted directory the container's user cannot
+		// write to, and the process then exits into a restart loop.
+		return nil, fmt.Errorf("%s: %w (the directory must exist and be writable "+
+			"by the user running this process)", path, err)
 	}
 	return &Store{db: db, last: map[string]Fix{}}, nil
 }
