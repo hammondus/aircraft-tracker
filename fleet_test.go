@@ -71,14 +71,20 @@ func TestLoadConfigRejects(t *testing.T) {
 	}
 }
 
-// The shipped example must actually load, or it is worse than no example.
+// The shipped example must actually load, or it is worse than no example. It
+// must also demonstrate the pattern the project actually uses: pointing at
+// fleet.json rather than repeating a fleet inline, so that copying it does not
+// leave two places claiming to hold the aircraft list.
 func TestExampleConfigIsValid(t *testing.T) {
 	c, err := LoadConfig("config.example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Fleet) != 2 {
-		t.Errorf("got %d aircraft", len(c.Fleet))
+	if c.FleetFile == "" {
+		t.Error("the example should use fleet_file, not an inline fleet")
+	}
+	if len(c.Fleet) == 0 {
+		t.Error("the example resolved to an empty fleet")
 	}
 }
 
