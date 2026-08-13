@@ -94,7 +94,7 @@ func main() {
 		}
 	}
 
-	web, err := newServer(cfg, hub, p)
+	web, err := newServer(cfg, hub, p, store)
 	if err != nil {
 		log.Fatalf("web: %v", err)
 	}

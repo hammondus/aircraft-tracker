@@ -172,6 +172,7 @@ func (t *tiles) handler() http.HandlerFunc {
 
 type server struct {
 	vendor  http.Handler
+	store   *Store
 	cfg     *Config
 	hub     *Hub
 	poller  *Poller
@@ -182,7 +183,7 @@ type server struct {
 	logging chan struct{} // semaphore bounding concurrent password verification
 }
 
-func newServer(cfg *Config, hub *Hub, p *Poller) (*server, error) {
+func newServer(cfg *Config, hub *Hub, p *Poller, store *Store) (*server, error) {
 	a, err := loadAssets()
 	if err != nil {
 		return nil, fmt.Errorf("static assets: %w", err)
@@ -197,6 +198,7 @@ func newServer(cfg *Config, hub *Hub, p *Poller) (*server, error) {
 	}
 	return &server{
 		vendor:  vendor,
+		store:   store,
 		cfg:     cfg,
 		hub:     hub,
 		poller:  p,
@@ -223,6 +225,8 @@ func (s *server) routes() http.Handler {
 	mux.Handle("GET /{$}", s.requireAuth(http.HandlerFunc(s.handleIndex)))
 	mux.Handle("GET /events", s.requireAuth(s.hub))
 	mux.Handle("GET /tiles/{token}/{name}", s.requireAuth(s.tiles.handler()))
+	mux.Handle("GET /api/flights", s.requireAuth(http.HandlerFunc(s.handleFlights)))
+	mux.Handle("GET /api/track", s.requireAuth(http.HandlerFunc(s.handleTrack)))
 
 	return securityHeaders(cacheDefaults(mux))
 }

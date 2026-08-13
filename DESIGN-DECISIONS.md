@@ -477,6 +477,39 @@ than five fixes.
 **Inferred flights are not records.** They are useful for finding your way
 around the archive and nothing more.
 
+### The replay UI
+
+History is a mode on the **same map**, not a separate page. Seeing an old track
+against the current basemap — and against where the fleet is right now — is most
+of the point, and a second page would duplicate the map setup for nothing.
+
+- Live aircraft stay visible in history mode but drop to 35% opacity, so a track
+  can be read against the present without the two competing.
+- The track is drawn as a wide translucent line under a narrow bright one, which
+  reads clearly on a dark basemap without a glow filter.
+- The scrubber floats over the map rather than sitting in the panel. Dragging a
+  control while watching a track ten centimetres away puts your eyes in the
+  wrong place.
+- **Replay steps through fixes at a fixed rate, not in real time.** A two-hour
+  flight played at 1x is a two-hour wait; what you want is the shape of it.
+
+Two API endpoints back it, both behind the session because they reveal where the
+aircraft have been:
+
+- `GET /api/flights?hex=&from=&to=` — inferred flights, newest first, with the
+  registration joined on so the client needs no lookup table.
+- `GET /api/track?hex=&from=&to=` — the recorded points for one flight.
+
+The flight list defaults to the last 30 days rather than everything, or it
+becomes unusable after a year. Both endpoints are `no-store`: they read an
+archive that is still being written to.
+
+Ranges accept either `YYYY-MM-DD` or RFC3339. A date-only `to` covers the whole
+of that day — treating it as midnight would make a single-day query return
+nothing, which is a baffling result. The inverted-range check runs *before* that
+widening, because doing it after turns a backwards range into a valid
+zero-length one and the mistake passes silently. A test caught exactly that.
+
 ### What history cannot do
 
 **It starts when the recorder does.** There is no backfill: nothing here can

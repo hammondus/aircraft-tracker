@@ -101,3 +101,66 @@ button[type="submit"] {
 }
 .card .link, #panel footer .link { background: none; color: var(--dim); }
 .error { color: var(--error); margin: 0; font-size: 0.85rem; }
+
+/* ---------------------------------------------------------------- history */
+
+.sr {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+.modes { display: flex; gap: 0.25rem; padding: 0.5rem 0.6rem 0; }
+.modes button {
+  flex: 1; background: none; border: 1px solid var(--line); border-radius: 7px;
+  color: var(--dim); font: inherit; font-size: 0.82rem; padding: 0.35rem;
+  cursor: pointer;
+}
+.modes button.active { color: var(--text); border-color: var(--live); background: color-mix(in srgb, var(--live) 12%, transparent); }
+
+#live-pane, #history-pane { display: contents; }
+
+.controls { display: flex; gap: 0.4rem; padding: 0.6rem; }
+.controls select {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem;
+  font: inherit; font-size: 0.82rem;
+}
+.hint { color: var(--dim); font-size: 0.8rem; margin: 0 0.7rem 0.4rem; }
+
+#flights { list-style: none; margin: 0; padding: 0 0.4rem; overflow-y: auto; }
+#flights li { margin-bottom: 0.25rem; }
+.flight {
+  width: 100%; text-align: left; background: none; border: 1px solid transparent;
+  border-radius: 8px; color: inherit; font: inherit; padding: 0.5rem 0.7rem;
+  cursor: pointer; display: grid; gap: 0.1rem;
+}
+.flight:hover { background: color-mix(in srgb, var(--line) 45%, transparent); }
+#flights li.selected .flight { border-color: var(--live); background: color-mix(in srgb, var(--live) 10%, transparent); }
+.flight .when { font-weight: 600; font-size: 0.86rem; }
+.flight .rego { color: var(--live); margin-right: 0.4rem; }
+.flight .stats { color: var(--dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+/* The scrubber floats over the map so the track stays visible while you drag
+   it -- a control tucked into the panel would put your eyes in the wrong
+   place. */
+#scrubber {
+  position: absolute; left: 1rem; bottom: 1rem; right: calc(min(21rem, 92vw) + 1rem);
+  display: flex; align-items: center; gap: 0.75rem; z-index: 2;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.85rem;
+}
+#scrubber[hidden] { display: none; }
+#play {
+  background: var(--live); color: #06210f; border: 0; border-radius: 6px;
+  width: 2rem; height: 2rem; font-size: 0.85rem; cursor: pointer; flex: none;
+}
+#slider { flex: 1; accent-color: var(--live); }
+#readout {
+  color: var(--dim); font-size: 0.8rem; font-variant-numeric: tabular-nums;
+  white-space: nowrap; flex: none; min-width: 15rem; text-align: right;
+}
+
+/* In history mode the live fleet list is out of the way, and vice versa. */
+body[data-mode="history"] #live-pane { display: none; }
+body[data-mode="live"] #history-pane { display: none; }

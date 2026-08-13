@@ -204,6 +204,29 @@ async function initMap() {
     },
   });
 
+  // History track: a wide translucent line under a narrow bright one, which
+  // reads clearly against a dark basemap without needing a glow filter.
+  map.addSource("track", { type: "geojson", data: emptyGeoJSON() });
+  map.addLayer({
+    id: "track-halo", type: "line", source: "track",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#38bdf8", "line-width": 7, "line-opacity": 0.18 },
+  });
+  map.addLayer({
+    id: "track-line", type: "line", source: "track",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#38bdf8", "line-width": 2 },
+  });
+  map.addSource("cursor", { type: "geojson", data: emptyGeoJSON() });
+  map.addLayer({
+    id: "cursor-icon", type: "symbol", source: "cursor",
+    layout: {
+      "icon-image": "aircraft", "icon-rotate": ["get", "track"],
+      "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-size": 0.9,
+    },
+    paint: { "icon-color": "#e2f2ff" },
+  });
+
   map.on("click", "fleet-icon", (e) => selectAircraft(e.features[0].properties.hex, map));
   map.on("mouseenter", "fleet-icon", () => (map.getCanvas().style.cursor = "pointer"));
   map.on("mouseleave", "fleet-icon", () => (map.getCanvas().style.cursor = ""));
@@ -231,6 +254,8 @@ function aircraftIcon() {
   ctx.fill();
   return ctx.getImageData(0, 0, size, size);
 }
+
+const emptyGeoJSON = () => ({ type: "FeatureCollection", features: [] });
 
 // ------------------------------------------------------------------ selection
 
@@ -349,3 +374,207 @@ function frame() {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ==================================================================== history
+//
+// The history view reuses the same map rather than living on its own page:
+// seeing an old track against the current basemap, and against live traffic, is
+// most of the point.
+
+const modeButtons = document.querySelectorAll(".modes button");
+const historyStatus = document.getElementById("h-status");
+const flightList = document.getElementById("flights");
+const pickAircraft = document.getElementById("h-aircraft");
+const pickRange = document.getElementById("h-range");
+const scrubber = document.getElementById("scrubber");
+const slider = document.getElementById("slider");
+const playButton = document.getElementById("play");
+const readout = document.getElementById("readout");
+
+let track = [];      // points of the selected flight
+let playing = null;  // interval handle while replaying
+
+const fmtWhen = (iso) =>
+  new Date(iso).toLocaleString([], {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+const fmtClock = (iso) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+function fmtDuration(ms) {
+  const mins = Math.round(ms / 60000);
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
+}
+
+function setMode(mode) {
+  body.dataset.mode = mode;
+  for (const b of modeButtons) {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  }
+  // Live aircraft stay visible in history mode but recede, so a track can be
+  // read against where the fleet is now without the two competing.
+  const dim = mode === "history" ? 0.35 : 1;
+  for (const id of ["fleet-icon", "fleet-label"]) {
+    if (!map.getLayer(id)) continue;
+    map.setPaintProperty(id, id === "fleet-icon" ? "icon-opacity" : "text-opacity", dim);
+  }
+  if (mode === "live") clearTrack();
+  else if (!flightList.childElementCount) loadFlights();
+}
+
+for (const b of modeButtons) b.addEventListener("click", () => setMode(b.dataset.mode));
+pickAircraft.addEventListener("change", loadFlights);
+pickRange.addEventListener("change", loadFlights);
+
+async function loadFlights() {
+  historyStatus.hidden = false;
+  historyStatus.textContent = "Loading…";
+  flightList.replaceChildren();
+
+  const params = new URLSearchParams();
+  if (pickAircraft.value) params.set("hex", pickAircraft.value);
+  const days = Number(pickRange.value);
+  if (days > 0) {
+    const from = new Date(Date.now() - days * 86400_000);
+    params.set("from", from.toISOString());
+  } else {
+    params.set("from", "2000-01-01");
+  }
+
+  let data;
+  try {
+    const r = await fetch(`/api/flights?${params}`);
+    if (r.status === 401) return signOut();
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (err) {
+    historyStatus.textContent = `Could not load flights: ${err.message}`;
+    return;
+  }
+
+  if (!data.flights.length) {
+    // Worth being specific: an empty archive is the normal state on day one,
+    // and looks identical to a broken query if we only say "no flights".
+    historyStatus.textContent =
+      "No flights recorded for this period. History starts when the recorder does.";
+    return;
+  }
+  historyStatus.hidden = true;
+
+  for (const f of data.flights) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "flight";
+    b.innerHTML =
+      `<span class="when"><span class="rego"></span><span class="date"></span></span>` +
+      `<span class="stats"></span>`;
+    b.querySelector(".rego").textContent = f.rego || f.hex;
+    b.querySelector(".date").textContent = fmtWhen(f.started);
+    b.querySelector(".stats").textContent =
+      `${fmtDuration(new Date(f.ended) - new Date(f.started))} · ` +
+      `${Math.round(f.distance_nm)} nm · ${f.max_alt_ft.toLocaleString()} ft`;
+    b.addEventListener("click", () => selectFlight(f, li));
+    li.append(b);
+    flightList.append(li);
+  }
+  if (data.truncated) {
+    historyStatus.hidden = false;
+    historyStatus.textContent = `Showing the most recent ${data.flights.length}; narrow the period for more.`;
+  }
+}
+
+async function selectFlight(f, li) {
+  for (const other of flightList.children) other.classList.toggle("selected", other === li);
+  stopPlaying();
+
+  const params = new URLSearchParams({ hex: f.hex, from: f.started, to: f.ended });
+  let data;
+  try {
+    const r = await fetch(`/api/track?${params}`);
+    if (r.status === 401) return signOut();
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (err) {
+    historyStatus.hidden = false;
+    historyStatus.textContent = `Could not load the track: ${err.message}`;
+    return;
+  }
+
+  track = data.points;
+  if (track.length < 2) return clearTrack();
+
+  map.getSource("track").setData({
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: track.map((p) => [p.lon, p.lat]) },
+  });
+
+  const lons = track.map((p) => p.lon);
+  const lats = track.map((p) => p.lat);
+  map.fitBounds(
+    [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+    { padding: { top: 60, bottom: 90, left: 60, right: panelWidth() + 60 }, duration: 700 },
+  );
+
+  slider.max = String(track.length - 1);
+  slider.value = "0";
+  scrubber.hidden = false;
+  showPoint(0);
+}
+
+function clearTrack() {
+  stopPlaying();
+  track = [];
+  scrubber.hidden = true;
+  map.getSource("track")?.setData(emptyGeoJSON());
+  map.getSource("cursor")?.setData(emptyGeoJSON());
+  for (const li of flightList.children) li.classList.remove("selected");
+}
+
+function showPoint(i) {
+  const p = track[i];
+  if (!p) return;
+  map.getSource("cursor").setData({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+    properties: { track: p.track_deg || 0 },
+  });
+  const alt = p.on_ground ? "ground" : `${p.alt_ft.toLocaleString()} ft`;
+  readout.textContent =
+    `${fmtClock(p.at)} · ${alt} · ${Math.round(p.speed_kt)} kt · ` +
+    `${String(Math.round(p.track_deg)).padStart(3, "0")}°`;
+}
+
+slider.addEventListener("input", () => {
+  stopPlaying();
+  showPoint(Number(slider.value));
+});
+
+// Replay steps through recorded fixes at a fixed rate rather than in real time.
+// A two-hour flight played back at 1x would be a two-hour wait; what you want is
+// to watch the shape of it.
+function stopPlaying() {
+  if (playing) clearInterval(playing);
+  playing = null;
+  playButton.textContent = "▶";
+  playButton.setAttribute("aria-label", "Play");
+}
+
+playButton.addEventListener("click", () => {
+  if (playing) return stopPlaying();
+  if (Number(slider.value) >= track.length - 1) slider.value = "0";
+  playButton.textContent = "❚❚";
+  playButton.setAttribute("aria-label", "Pause");
+  playing = setInterval(() => {
+    const next = Number(slider.value) + 1;
+    if (next >= track.length) return stopPlaying();
+    slider.value = String(next);
+    showPoint(next);
+  }, 60);
+});
+
+function signOut() {
+  location.href = "/login?next=" + encodeURIComponent(location.pathname);
+}

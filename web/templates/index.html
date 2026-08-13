@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/vendor/maplibre-gl@6.3.0/maplibre-gl.css">
 <link rel="stylesheet" href="{{.CSS}}">
 </head>
-<body class="app"
+<body class="app" data-mode="live"
       data-tiles="{{.Tiles}}"
       data-layers="{{.Layers}}"
       data-sprite="{{.Sprite}}"
@@ -22,30 +22,63 @@
     <span id="conn" class="badge" data-state="connecting">connecting</span>
   </header>
 
-  <ul id="fleet">
-    {{range .Fleet}}
-    <li data-hex="{{.Hex}}" data-status="no_contact">
-      <button type="button" class="row" aria-label="Show {{.Rego}} on the map">
-        <span class="rego">{{.Rego}}</span>
-        <span class="type">{{.Type}}</span>
-        <span class="status">no contact</span>
-        <span class="detail"></span>
-      </button>
-    </li>
-    {{end}}
-  </ul>
+  <nav class="modes" role="tablist">
+    <button type="button" data-mode="live" class="active" role="tab" aria-selected="true">Live</button>
+    <button type="button" data-mode="history" role="tab" aria-selected="false">History</button>
+  </nav>
+
+  <section id="live-pane">
+    <ul id="fleet">
+      {{range .Fleet}}
+      <li data-hex="{{.Hex}}" data-status="no_contact">
+        <button type="button" class="row" aria-label="Show {{.Rego}} on the map">
+          <span class="rego">{{.Rego}}</span>
+          <span class="type">{{.Type}}</span>
+          <span class="status">no contact</span>
+          <span class="detail"></span>
+        </button>
+      </li>
+      {{end}}
+    </ul>
+  </section>
+
+  <section id="history-pane" hidden>
+    <div class="controls">
+      <label class="sr" for="h-aircraft">Aircraft</label>
+      <select id="h-aircraft">
+        <option value="">All aircraft</option>
+        {{range .Fleet}}<option value="{{.Hex}}">{{.Rego}}</option>{{end}}
+      </select>
+      <label class="sr" for="h-range">Period</label>
+      <select id="h-range">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="365">Last year</option>
+        <option value="0">Everything</option>
+      </select>
+    </div>
+    <p id="h-status" class="hint">Loading…</p>
+    <ul id="flights"></ul>
+  </section>
 
   <footer>
     <form method="post" action="/logout"><button type="submit" class="link">Sign out</button></form>
     <p class="attrib">
       Positions <a href="https://adsb.lol/">adsb.lol</a>,
-      <a href="https://airplanes.live/">airplanes.live</a>.
+      <a href="https://airplanes.live/">airplanes.live</a>,
+      <a href="https://adsb.fi/">adsb.fi</a>.
       Map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.
     </p>
   </footer>
 </aside>
 
+<div id="scrubber" hidden>
+  <button type="button" id="play" aria-label="Play">▶</button>
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Position along the flight">
+  <span id="readout"></span>
+</div>
+
 <script src="/vendor/pmtiles@4.5.0/pmtiles.js"></script>
-<script type="module" src="{{.JS}}"></script>
+<script type="module" src="{{.JS}}" defer></script>
 </body>
 </html>

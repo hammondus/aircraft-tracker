@@ -34,7 +34,7 @@ func testServer(t *testing.T) (*server, *httptest.Server) {
 	if err := cfg.normalise(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := newServer(cfg, NewHub(), NewPoller(cfg))
+	s, err := newServer(cfg, NewHub(), NewPoller(cfg), testStore(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestNoPasswordMeansOpen(t *testing.T) {
 	if err := cfg.normalise(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := newServer(cfg, NewHub(), NewPoller(cfg))
+	s, err := newServer(cfg, NewHub(), NewPoller(cfg), testStore(t))
 	if err != nil {
 		t.Fatal(err)
 	}
