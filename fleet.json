@@ -66,5 +66,10 @@
     "type": "AC50",
     "desc": "Aero Commander 500 Shrike",
     "verified": true
+  },
+  {
+    "rego": "VH-UZY",
+    "type": "C208",
+    "desc": "Cessna C208 Caravan"
   }
 ]
