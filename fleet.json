@@ -71,5 +71,10 @@
     "rego": "VH-UZY",
     "type": "C208",
     "desc": "Cessna C208 Caravan"
+  },
+    {
+    "rego": "VH-KEY",
+    "type": "BE36",
+    "desc": "Beechcraft A36 Bonanza"
   }
 ]
